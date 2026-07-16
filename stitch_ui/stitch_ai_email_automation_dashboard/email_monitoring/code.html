@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Email Monitoring | Control Panel</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        /* Custom scrollbar for clinical feel */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #d0d7de; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8c959f; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#2a3139",
+                        "on-secondary-fixed": "#181c22",
+                        "on-tertiary-fixed-variant": "#7a2f00",
+                        "outline-variant": "#c2c6d6",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-variant": "#dce3ee",
+                        "secondary-container": "#dfe2eb",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed-variant": "#004493",
+                        "on-error-container": "#93000a",
+                        "surface-tint": "#005bc0",
+                        "on-secondary-fixed-variant": "#43474e",
+                        "secondary-fixed": "#dfe2eb",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#b84b00",
+                        "tertiary": "#913900",
+                        "on-surface": "#151c24",
+                        "surface-container-high": "#e2e9f4",
+                        "tertiary-fixed": "#ffdbcc",
+                        "outline": "#727785",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#61646c",
+                        "surface-container-low": "#eef4ff",
+                        "surface-bright": "#f8f9ff",
+                        "inverse-on-surface": "#ebf1fc",
+                        "tertiary-fixed-dim": "#ffb693",
+                        "inverse-primary": "#adc6ff",
+                        "surface-dim": "#d4dae5",
+                        "on-tertiary-container": "#ffece5",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-background": "#151c24",
+                        "background": "#f8f9ff",
+                        "primary-fixed": "#d8e2ff",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed-dim": "#c3c6cf",
+                        "error": "#ba1a1a",
+                        "surface-container": "#e8eef9",
+                        "secondary": "#5b5e66",
+                        "surface": "#f8f9ff",
+                        "primary-container": "#0969da",
+                        "on-primary-container": "#ecefff",
+                        "surface-container-highest": "#dce3ee",
+                        "on-primary-fixed": "#001a41",
+                        "primary": "#0051ae",
+                        "on-surface-variant": "#424753",
+                        "on-error": "#ffffff",
+                        "success": "#1a7f37",
+                        "success-container": "#dafbe1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem",
+                        "brand": "6px"
+                    },
+                    "spacing": {
+                        "header-height": "64px",
+                        "sidebar-width": "260px",
+                        "stack-md": "1rem",
+                        "stack-sm": "0.5rem",
+                        "gutter": "1rem",
+                        "container-max": "1280px",
+                        "stack-lg": "2rem"
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface antialiased">
+<!-- NavigationDrawer (Shared Component) -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-inverse-surface dark:bg-inverse-surface border-r border-outline-variant flex flex-col z-50">
+<div class="p-6">
+<h1 class="font-Inter font-bold text-[32px] leading-[40px] tracking-[-0.02em] text-on-primary-fixed">UTSERVIO</h1>
+</div>
+<nav class="flex-1 flex flex-col h-full overflow-y-auto">
+<a class="flex items-center text-on-secondary-fixed-variant font-medium text-[14px] px-4 py-3 hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center text-on-secondary-fixed-variant font-medium text-[14px] px-4 py-3 hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">account_tree</span>
+                Workflows
+            </a>
+<!-- Active State: Email Monitoring -->
+<a class="flex items-center text-on-primary font-semibold text-[12px] border-l-2 border-primary bg-secondary-container/10 px-4 py-3 tracking-wider" href="#">
+<span class="material-symbols-outlined mr-3">mail</span>
+                Email Monitoring
+            </a>
+<a class="flex items-center text-on-secondary-fixed-variant font-medium text-[14px] px-4 py-3 hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">settings_suggest</span>
+                Automation
+            </a>
+</nav>
+<div class="mt-auto p-4 bg-black/10">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-brand object-cover border border-outline" data-alt="A clean, professional headshot of a corporate administrator in a modern office, using a soft, high-key lighting style. The background is a blurred enterprise office with glass partitions and cool blue accents, matching a minimalist, authoritative tech aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCsh8J3x-gixxpmU4MryDKAe4DjxcuHssJ4t8FRXVh7M7c7Fx4E6gDCsOX7ynYPbl4Q31ut4XSDa1dS_eSQHBq3OzXvW7rGsA5bTNMu7dmWE0EdOvdMqKOmjAelq85ZP0m0tQZ78pAass0MbYqB-F0vOAuuWSJ38jjUXAjVjHgywNCQat_4Xt7PiskwmKkmTHxIVFwfZzRi6KRNn7z57cAeMXCWjNL-4NbqjTPLFjY8JkmSal5AjBEFgw"/>
+<div class="flex flex-col">
+<span class="text-[14px] font-bold text-on-primary">Admin User</span>
+<span class="text-[12px] text-on-secondary-fixed-variant">Enterprise Plan</span>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-outline-variant/20 flex justify-between items-center text-[10px] text-on-secondary-fixed-variant uppercase tracking-widest">
+<span>v2.4.0</span>
+<span class="material-symbols-outlined text-[14px]">lock</span>
+</div>
+</div>
+</aside>
+<!-- TopAppBar (Shared Component) -->
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-header-height bg-surface dark:bg-surface border-b border-outline-variant flex justify-between items-center px-8 z-40">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface cursor-pointer md:hidden">menu</span>
+<h2 class="font-Inter font-bold text-[24px] leading-[32px] tracking-[-0.01em] text-on-surface">Control Panel</h2>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer">notifications</span>
+<span class="absolute -top-1 -right-1 w-2 h-2 bg-error rounded-full"></span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer">help_outline</span>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[64px] pl-0 md:pl-[260px] min-h-screen">
+<div class="max-w-[1280px] mx-auto p-8 space-y-8">
+<!-- Filter & Search Bar Area -->
+<div class="bg-white border border-outline-variant rounded-brand p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+<!-- Filter Tabs -->
+<div class="flex flex-wrap gap-1">
+<button class="px-4 py-1.5 text-[12px] font-bold rounded-brand bg-primary text-white transition-all">All</button>
+<button class="px-4 py-1.5 text-[12px] font-medium text-on-surface-variant rounded-brand hover:bg-surface-container transition-all">Sent</button>
+<button class="px-4 py-1.5 text-[12px] font-medium text-on-surface-variant rounded-brand hover:bg-surface-container transition-all">Delivered</button>
+<button class="px-4 py-1.5 text-[12px] font-medium text-on-surface-variant rounded-brand hover:bg-surface-container transition-all">Pending</button>
+<button class="px-4 py-1.5 text-[12px] font-medium text-on-surface-variant rounded-brand hover:bg-surface-container transition-all">Failed</button>
+<button class="px-4 py-1.5 text-[12px] font-medium text-on-surface-variant rounded-brand hover:bg-surface-container transition-all">Bounced</button>
+</div>
+<!-- Search Input -->
+<div class="relative w-full lg:w-80">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-brand text-[14px] focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all" placeholder="Search recipients or subjects..." type="text"/>
+</div>
+</div>
+<!-- Email Monitoring Table -->
+<div class="bg-white border border-outline-variant rounded-brand overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-[#f6f8fa] border-b border-outline-variant">
+<tr>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Recipient</th>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Subject</th>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Status</th>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Sent Time</th>
+<th class="px-6 py-4 text-[12px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Failed Row (Priority) -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-error-container flex items-center justify-center text-on-error-container text-[12px] font-bold">MK</div>
+<div>
+<p class="text-[14px] font-semibold text-on-surface">marcus.kane@enterprise.io</p>
+<p class="text-[12px] text-on-surface-variant">System Admin</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-[14px] text-on-surface">Critical System Alert: Node Failure in Cluster-A7</td>
+<td class="px-6 py-4">
+<span class="text-[12px] px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant/30">Infrastructure</span>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-error-container text-on-error-container border border-error/20">
+                                        Failed
+                                    </span>
+</td>
+<td class="px-6 py-4 text-[13px] text-on-surface-variant font-mono">2023-10-24 09:42:11</td>
+<td class="px-6 py-4 text-right">
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-[12px] font-bold rounded-brand hover:bg-primary-container active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[16px]">refresh</span>
+                                        Retry
+                                    </button>
+</td>
+</tr>
+<!-- Delivered Row -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container text-[12px] font-bold">SL</div>
+<div>
+<p class="text-[14px] font-semibold text-on-surface">sarah.lee@fintech-global.com</p>
+<p class="text-[12px] text-on-surface-variant">Billing Dept</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-[14px] text-on-surface">Monthly Automation Report - October 2023</td>
+<td class="px-6 py-4">
+<span class="text-[12px] px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant/30">Analytics</span>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-success-container text-success border border-success/20">
+                                        Delivered
+                                    </span>
+</td>
+<td class="px-6 py-4 text-[13px] text-on-surface-variant font-mono">2023-10-24 09:15:00</td>
+<td class="px-6 py-4 text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Sent Row -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container text-[12px] font-bold">JD</div>
+<div>
+<p class="text-[14px] font-semibold text-on-surface">john.doe@ai-solutions.net</p>
+<p class="text-[12px] text-on-surface-variant">DevOps Lead</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-[14px] text-on-surface">Access Granted: New Environment 'Prod-Shadow'</td>
+<td class="px-6 py-4">
+<span class="text-[12px] px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant/30">Security</span>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-primary-fixed text-primary border border-primary/20">
+                                        Sent
+                                    </span>
+</td>
+<td class="px-6 py-4 text-[13px] text-on-surface-variant font-mono">2023-10-24 08:58:22</td>
+<td class="px-6 py-4 text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Bounced Row -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-outline text-[12px] font-bold">??</div>
+<div>
+<p class="text-[14px] font-semibold text-on-surface">invalid-user@legacy-mail.org</p>
+<p class="text-[12px] text-on-surface-variant">External Partner</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-[14px] text-on-surface">Webhook Integration: Documentation Update</td>
+<td class="px-6 py-4">
+<span class="text-[12px] px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant/30">Marketing</span>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-inverse-surface/10 text-inverse-surface border border-inverse-surface/20">
+                                        Bounced
+                                    </span>
+</td>
+<td class="px-6 py-4 text-[13px] text-on-surface-variant font-mono">2023-10-24 08:30:45</td>
+<td class="px-6 py-4 text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination Footer -->
+<div class="bg-[#f6f8fa] border-t border-outline-variant px-6 py-4 flex items-center justify-between">
+<p class="text-[12px] text-on-surface-variant font-medium">Showing <span class="font-bold text-on-surface">1-4</span> of <span class="font-bold text-on-surface">1,248</span> emails</p>
+<div class="flex items-center gap-2">
+<button class="p-1.5 border border-outline-variant rounded-brand bg-white hover:bg-surface-container-low disabled:opacity-50 transition-all" disabled="">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<div class="flex items-center gap-1">
+<button class="w-8 h-8 flex items-center justify-center text-[12px] font-bold rounded-brand bg-primary text-white">1</button>
+<button class="w-8 h-8 flex items-center justify-center text-[12px] font-medium rounded-brand hover:bg-surface-container text-on-surface">2</button>
+<button class="w-8 h-8 flex items-center justify-center text-[12px] font-medium rounded-brand hover:bg-surface-container text-on-surface">3</button>
+<span class="text-[12px] px-1 text-outline">...</span>
+<button class="w-8 h-8 flex items-center justify-center text-[12px] font-medium rounded-brand hover:bg-surface-container text-on-surface">125</button>
+</div>
+<button class="p-1.5 border border-outline-variant rounded-brand bg-white hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Dashboard Stats Preview (Small Cards) -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="bg-white p-5 border border-outline-variant rounded-brand flex justify-between items-start">
+<div>
+<p class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Success Rate</p>
+<h3 class="text-[24px] font-bold text-on-surface">98.4%</h3>
+<p class="text-[11px] text-success font-bold mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+                            +0.2% from yesterday
+                        </p>
+</div>
+<div class="p-2 bg-success-container rounded-brand">
+<span class="material-symbols-outlined text-success">verified</span>
+</div>
+</div>
+<div class="bg-white p-5 border border-outline-variant rounded-brand flex justify-between items-start">
+<div>
+<p class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Bounces</p>
+<h3 class="text-[24px] font-bold text-on-surface">12</h3>
+<p class="text-[11px] text-error font-bold mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+                            +4% from average
+                        </p>
+</div>
+<div class="p-2 bg-error-container rounded-brand">
+<span class="material-symbols-outlined text-error">error</span>
+</div>
+</div>
+<div class="bg-white p-5 border border-outline-variant rounded-brand flex justify-between items-start">
+<div>
+<p class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Latency</p>
+<h3 class="text-[24px] font-bold text-on-surface">1.2s</h3>
+<p class="text-[11px] text-on-surface-variant font-bold mt-1">Global average response</p>
+</div>
+<div class="p-2 bg-secondary-container rounded-brand">
+<span class="material-symbols-outlined text-on-secondary-fixed-variant">speed</span>
+</div>
+</div>
+<div class="bg-white p-5 border border-outline-variant rounded-brand flex justify-between items-start">
+<div>
+<p class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Queue Size</p>
+<h3 class="text-[24px] font-bold text-on-surface">2,410</h3>
+<div class="mt-2 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary h-full w-[65%]"></div>
+</div>
+</div>
+<div class="p-2 bg-primary-fixed rounded-brand">
+<span class="material-symbols-outlined text-primary">data_usage</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Micro-interaction for the "Retry" button
+        document.querySelectorAll('button').forEach(button => {
+            if (button.innerText.includes('Retry')) {
+                button.addEventListener('click', function() {
+                    const originalContent = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">refresh</span> Retrying...';
+                    this.classList.replace('bg-primary', 'bg-outline');
+                    
+                    setTimeout(() => {
+                        this.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> Sent';
+                        this.classList.replace('bg-outline', 'bg-success');
+                        
+                        // Change status badge of the row
+                        const row = this.closest('tr');
+                        const badge = row.querySelector('span.uppercase');
+                        badge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-success-container text-success border border-success/20';
+                        badge.innerText = 'Delivered';
+                    }, 2000);
+                });
+            }
+        });
+    </script>
+</body></html>
