@@ -22,12 +22,12 @@ export const DashboardOverview = () => {
           Array(6).fill(0).map((_, i) => <LoadingSkeleton key={i} type="card" />)
         ) : summary ? (
           <>
-            <KpiCard label="Total Workflows" value={summary.total_workflows.toLocaleString()} />
-            <KpiCard label="Active Workflows" value={summary.active_workflows.toLocaleString()} trend={{ value: '4%', direction: 'up' }} status="success" />
-            <KpiCard label="Emails Processed" value={(summary.emails_processed / 1000).toFixed(1) + 'k'} />
-            <KpiCard label="Failed Executions" value={summary.failed_executions.toLocaleString()} trend={{ value: '8%', direction: 'down' }} status="error" />
-            <KpiCard label="Pending Jobs" value={summary.pending_jobs.toLocaleString()} />
-            <KpiCard label="System Health" value={`${summary.system_health_percent}%`} status="success" />
+            <KpiCard label="Total Workflows" value={(summary.total_workflows ?? 0).toLocaleString()} />
+            <KpiCard label="Active Workflows" value={(summary.active_workflows ?? 0).toLocaleString()} trend={{ value: '4%', direction: 'up' }} status="success" />
+            <KpiCard label="Emails Processed" value={((summary.emails_processed ?? 0) / 1000).toFixed(1) + 'k'} />
+            <KpiCard label="Failed Executions" value={(summary.failed_executions ?? 0).toLocaleString()} trend={{ value: '8%', direction: 'down' }} status="error" />
+            <KpiCard label="Pending Jobs" value={(summary.pending_jobs ?? 0).toLocaleString()} />
+            <KpiCard label="System Health" value={`${summary.system_health_percent ?? 0}%`} status="success" />
           </>
         ) : (
           Array(6).fill(0).map((_, i) => <KpiCard key={i} label="—" value="—" />)
@@ -63,10 +63,24 @@ export const DashboardOverview = () => {
              {summaryLoading ? (
                <div className="w-full h-full bg-surface-container-low animate-pulse"></div>
              ) : (
-               <svg className="w-full h-[calc(100%-10px)] absolute bottom-[10px]" preserveAspectRatio="none" viewBox="0 0 1000 100">
-                  <polyline fill="none" points="0,80 166,75 333,40 500,20 666,45 833,60 1000,85" stroke="#0051ae" strokeWidth="2"></polyline>
-                  <path d="M0,80 L166,75 L333,40 L500,20 L666,45 L833,60 L1000,85 L1000,100 L0,100 Z" fill="rgba(0, 81, 174, 0.05)"></path>
-               </svg>
+               (() => {
+                 const series = summary?.email_volume_series || [];
+                 if (series.length < 2) return null;
+                 
+                 const maxVal = Math.max(...series.map(d => Math.max(d.incoming, 1)));
+                 const points = series.map((d, i) => {
+                   const x = (i / (series.length - 1)) * 1000;
+                   const y = 100 - ((d.incoming / maxVal) * 80); // Leave some top padding
+                   return `${x},${y}`;
+                 }).join(' ');
+                 
+                 return (
+                   <svg className="w-full h-[calc(100%-10px)] absolute bottom-[10px]" preserveAspectRatio="none" viewBox="0 0 1000 100">
+                      <polyline fill="none" points={points} stroke="#0051ae" strokeWidth="2"></polyline>
+                      <path d={`M0,100 L${points} L1000,100 Z`} fill="rgba(0, 81, 174, 0.05)"></path>
+                   </svg>
+                 );
+               })()
              )}
           </div>
         </div>

@@ -1,351 +1,343 @@
-// Mock delay to simulate network
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+import axios from 'axios';
+import { USE_MOCK_DATA } from '../config/appConfig';
+import { normalizeEmail, normalizeWorkflowExecution } from './adapters';
 
-// Mock Data
-let workflows = [
-  {
-    id: "wf_98231",
-    name: "Data Ingestion Pipeline v4",
-    status: "running",
-    trigger_type: "cron",
-    schedule: "*/10 * * * *",
-    last_run: "2026-07-16T09:50:00Z",
-    category_filter: "Billing Complaint",
-    destination_team: "Finance"
-  },
-  {
-    id: "wf_98232",
-    name: "Support Ticket Router",
-    status: "active",
-    trigger_type: "webhook",
-    schedule: null,
-    last_run: "2026-07-16T10:15:00Z",
-    category_filter: "Technical Support Request",
-    destination_team: "Engineering"
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+const validateArray = (data, name) => {
+  if (!Array.isArray(data)) throw new Error(`Unable to load data: Unexpected response format for ${name}`);
+  return data;
+};
+
+const validateObject = (data, name) => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(`Unable to load data: Unexpected response format for ${name}`);
+  return data;
+};
+// Create Axios client using environment variable or default to localhost
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+const axiosClient = axios.create({
+  baseURL,
+  headers: {
+    'Content-Type': 'application/json'
   }
-];
+});
 
-let emails = [
-  {
-    id: "em_10234",
-    recipient: "marcus.kane@enterprise.io",
-    subject: "Critical System Alert: Node Failure in Cluster-A7",
-    category: "Server Downtime Alert",
-    status: "failed",
-    sent_time: "2026-07-16T09:42:11Z",
-    retry_count: 1
+// Intercept responses to unwrap the `APIResponse` generic structure
+axiosClient.interceptors.response.use(
+  (response) => {
+    const resData = response.data;
+    // FastAPI success_response format: { success: true, data: { ... } }
+    if (resData && resData.success !== undefined) {
+       return resData.data; 
+    }
+    return resData;
   },
-  {
-    id: "em_10235",
-    recipient: "alex.chen@startup.com",
-    subject: "RE: Refund request for order #8812",
-    category: "Refund Request",
-    status: "sent",
-    sent_time: "2026-07-16T10:05:00Z",
-    retry_count: 0
-  },
-  {
-    id: "em_10236",
-    recipient: "sara.connor@sky.net",
-    subject: "Welcome to Utservio Enterprise",
-    category: "Account Access Issue",
-    status: "delivered",
-    sent_time: "2026-07-16T10:10:00Z",
-    retry_count: 0
-  },
-  {
-    id: "em_10237",
-    recipient: "john.doe@invalid-domain.com",
-    subject: "Your Weekly Digest",
-    category: "Spam / Irrelevant",
-    status: "bounced",
-    sent_time: "2026-07-16T10:12:00Z",
-    retry_count: 0
-  },
-  {
-    id: "em_10238",
-    recipient: "support@vendor.com",
-    subject: "Invoice #9921 Processing",
-    category: "Vendor Invoice",
-    status: "pending",
-    sent_time: "2026-07-16T10:20:00Z",
-    retry_count: 0
-  },
-  {
-    id: "em_10239",
-    recipient: "it-admin@enterprise.io",
-    subject: "Access Request Approved",
-    category: "Access Request (Internal)",
-    status: "failed",
-    sent_time: "2026-07-16T10:25:00Z",
-    retry_count: 2
-  },
-  {
-    id: "em_10240",
-    recipient: "finance-team@enterprise.io",
-    subject: "Budget Approval Required for Q3",
-    category: "Budget Approval Request",
-    status: "delivered",
-    sent_time: "2026-07-16T10:30:00Z",
-    retry_count: 0
+  (error) => {
+    console.error("API Error:", error);
+    return Promise.reject(error);
   }
-];
-
-const categories = [
-  { category: "Billing Complaint", type: "Customer", department: "Finance", priority: "High" },
-  { category: "Refund Request", type: "Customer", department: "Finance", priority: "Medium" },
-  { category: "Product Inquiry", type: "Customer", department: "Sales", priority: "Low" },
-  { category: "Technical Support Request", type: "Customer", department: "Engineering", priority: "High" },
-  { category: "Account Access Issue", type: "Customer", department: "Support", priority: "High" },
-  { category: "Subscription Cancellation", type: "Customer", department: "Retention", priority: "Medium" },
-  { category: "Order Status Inquiry", type: "Customer", department: "Operations", priority: "Low" },
-  { category: "Delivery Complaint", type: "Customer", department: "Operations", priority: "High" },
-  { category: "Positive Feedback", type: "Customer", department: "Marketing", priority: "Low" },
-  { category: "Partnership Inquiry", type: "Customer", department: "Business Dev", priority: "Medium" },
-  { category: "Legal / Compliance Concern", type: "Customer", department: "Legal", priority: "Critical" },
-  { category: "Spam / Irrelevant", type: "Customer", department: "—", priority: "Low" },
-  
-  { category: "Server Downtime Alert", type: "Internal", department: "Engineering", priority: "Critical" },
-  { category: "Internal Policy Update", type: "Internal", department: "HR", priority: "Low" },
-  { category: "Access Request (Internal)", type: "Internal", department: "IT", priority: "Medium" },
-  { category: "System Backup Notification", type: "Internal", department: "Engineering", priority: "Low" },
-  { category: "Budget Approval Request", type: "Internal", department: "Finance", priority: "Medium" },
-  { category: "Employee Onboarding", type: "Internal", department: "HR", priority: "Medium" },
-  { category: "Security Incident Report", type: "Internal", department: "Security", priority: "Critical" },
-  { category: "Vendor Invoice", type: "Internal", department: "Finance", priority: "Medium" },
-  { category: "Internal Escalation", type: "Internal", department: "Varies", priority: "High" },
-  { category: "Meeting / Scheduling", type: "Internal", department: "—", priority: "Low" }
-];
+);
 
 export const api = {
+  // ---------------------------------------------------------
   // Dashboard
+  // ---------------------------------------------------------
   getDashboardSummary: async () => {
-    await delay(500);
-    return {
-      total_workflows: 1284,
-      active_workflows: 842,
-      emails_processed: 45200,
-      successful_executions: 44150,
-      failed_executions: 12,
-      pending_jobs: 156,
-      system_health_percent: 99.9,
-      email_volume_series: [
-        { time: "08:00", incoming: 120, automated: 95 },
-        { time: "10:00", incoming: 180, automated: 150 },
-        { time: "12:00", incoming: 220, automated: 190 },
-        { time: "14:00", incoming: 300, automated: 280 },
-        { time: "16:00", incoming: 250, automated: 220 },
-        { time: "18:00", incoming: 150, automated: 140 },
-        { time: "20:00", incoming: 90, automated: 85 }
-      ]
-    };
+    const response = await axiosClient.get('/dashboard/summary');
+    return validateObject(response, 'Dashboard Summary');
   },
   
   getRecentActivity: async () => {
-    await delay(500);
-    return {
-      data: [
-        {
-          id: "act_001",
-          type: "workflow_success",
-          title: "Workflow \"Invoice_Parser_v2\" executed successfully",
-          description: "Processed 14 internal attachments from AP@enterprise.com",
-          timestamp: new Date(Date.now() - 2 * 60000).toISOString(),
-          status: "success"
-        },
-        {
-          id: "act_002",
-          type: "email_error",
-          title: "Email ingestion failed for \"Support_Ticket_Router\"",
-          description: "Authentication timeout on IMAP relay 04",
-          timestamp: new Date(Date.now() - 14 * 60000).toISOString(),
-          status: "error"
-        },
-        {
-          id: "act_003",
-          type: "system_info",
-          title: "System backup completed",
-          description: "Snapshot #8841-B stored in primary cloud vault",
-          timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
-          status: "info"
-        },
-        {
-          id: "act_004",
-          type: "workflow_created",
-          title: "New Workflow Created: \"Onboarding_Flow_v1\"",
-          description: "Trigger: New User signup event (Webhook)",
-          timestamp: new Date(Date.now() - 60 * 60000).toISOString(),
-          status: "success"
-        }
-      ]
-    };
+    const response = await axiosClient.get('/dashboard/recent-activity');
+    return validateArray(response.data || response, 'Recent Activity');
   },
 
-  // Categories
-  getCategories: async () => {
-    await delay(300);
-    return { data: categories };
-  },
-
+  // ---------------------------------------------------------
   // Workflows
+  // ---------------------------------------------------------
+  getCategories: async () => {
+    const response = await axiosClient.get('/workflows/categories');
+    const data = validateArray(response.data || response, 'Categories');
+    return { data }; // Wrap array for UI dropdowns
+  },
+
   getWorkflows: async ({ status = 'all', search = '', page = 1, pageSize = 10 }) => {
-    await delay(600);
-    if (window.__FORCE_ERROR__) throw new Error('Mock API Connection Failed');
+    const response = await axiosClient.get('/workflows', {
+      params: { search, page, page_size: pageSize }
+    });
     
-    let filtered = workflows;
+    const rawData = validateArray(response.data || response, 'Workflows');
     
-    if (status !== 'all') {
-      filtered = filtered.filter(w => w.status === status);
-    }
-    
-    if (search) {
-      filtered = filtered.filter(w => w.name.toLowerCase().includes(search.toLowerCase()));
-    }
-    
-    const start = (page - 1) * pageSize;
-    const paginated = filtered.slice(start, start + pageSize);
+    // Map backend response -> UI Expected Format
+    const mappedData = rawData.map(w => {
+      let category = "";
+      if (w.trigger_conditions_json?.rules?.length > 0) {
+         category = w.trigger_conditions_json.rules[0].value;
+         if (category === 'any') category = '';
+      }
+      let team = "";
+      if (w.description && w.description.startsWith("Target Team: ")) {
+         team = w.description.replace("Target Team: ", "");
+      }
+      return {
+        ...w,
+        status: w.is_active ? 'active' : 'disabled',
+        trigger_type: 'webhook', // Fallback for UI visualization
+        last_run: w.updated_at,
+        category_filter: category,
+        destination_team: team
+      };
+    });
     
     return {
-      data: paginated,
-      total: filtered.length,
-      page,
-      page_size: pageSize
+      data: mappedData,
+      total: response.meta?.total_items || 0,
+      page: response.meta?.current_page || page,
+      page_size: response.meta?.page_size || pageSize
     };
   },
   
   createWorkflow: async (workflow) => {
-    await delay(800);
-    const newWf = {
-      ...workflow,
-      id: `wf_${Math.floor(Math.random() * 100000)}`,
-      status: 'disabled',
-      last_run: null
+    // Fetch a valid mailbox_account_id from an existing workflow
+    const existing = await api.getWorkflows({ pageSize: 1 });
+    let mailboxId = "00000000-0000-0000-0000-000000000000";
+    if (existing && existing.data && existing.data.length > 0) {
+      mailboxId = existing.data[0].mailbox_account_id;
+    } else {
+      // Fallback to the known UUID from our test db
+      mailboxId = "276681d7-7ca4-47aa-851b-fd046ffc1ef4"; 
+    }
+    
+    // Map UI form fields -> Backend schema fields
+    const payload = {
+      name: workflow.name || "Untitled Workflow",
+      description: workflow.description || "No description",
+      mailbox_account_id: mailboxId,
+      trigger_conditions_json: workflow.trigger_conditions_json || { operator: "AND", rules: [] },
+      actions_json: workflow.actions_json || { actions: [] },
+      is_active: false
     };
-    workflows = [newWf, ...workflows];
-    return newWf;
+
+    return await axiosClient.post('/workflows', payload);
   },
   
-  updateWorkflow: async (id, updates) => {
-    await delay(800);
-    workflows = workflows.map(w => w.id === id ? { ...w, ...updates } : w);
-    return workflows.find(w => w.id === id);
+  updateWorkflow: async (id, workflow) => {
+    const payload = {
+      name: workflow.name,
+      description: workflow.description,
+      trigger_conditions_json: workflow.trigger_conditions_json,
+      actions_json: workflow.actions_json
+    };
+    return await axiosClient.put(`/workflows/${id}`, payload);
   },
   
   deleteWorkflow: async (id) => {
-    await delay(800);
-    workflows = workflows.filter(w => w.id !== id);
+    await axiosClient.delete(`/workflows/${id}`);
     return { success: true };
   },
   
+  getWorkflowExecutions: async (id) => {
+    const response = await axiosClient.get(`/workflows/${id}/executions`);
+    return response || [];
+  },
+  
   toggleWorkflowState: async (id, action) => {
-    await delay(600);
-    let newStatus = action;
-    if (action === 'start') newStatus = 'running';
-    if (action === 'stop') newStatus = 'paused';
-    if (action === 'enable') newStatus = 'active';
-    if (action === 'disable') newStatus = 'disabled';
+    let apiAction = action;
+    if (action === 'start') apiAction = 'enable';
+    if (action === 'stop') apiAction = 'disable';
     
-    workflows = workflows.map(w => w.id === id ? { ...w, status: newStatus } : w);
-    return workflows.find(w => w.id === id);
+    const updated = await axiosClient.patch(`/workflows/${id}/state`, { action: apiAction });
+    return {
+      ...updated,
+      status: updated.is_active ? 'active' : 'disabled',
+      trigger_type: 'webhook',
+      last_run: updated.updated_at
+    };
   },
 
+  // ---------------------------------------------------------
   // Emails
+  // TODO [BACKEND STANDARDIZATION]: This endpoint uses the Sprint 2 legacy route /emails/
+  // and does NOT follow the /api/v1/ convention used by the rest of the API (workflows, dashboard).
+  // The real call goes to the axiosClient baseURL's HOST:PORT + /emails/ directly (not /api/v1/emails).
+  // Ask the backend team to either:
+  //   (a) add a /api/v1/emails route that wraps/replaces this one, OR
+  //   (b) keep it at /emails/ and document it as a deliberate exception.
+  // Until then, this call uses a separate Axios instance without the /api/v1 prefix.
+  // ---------------------------------------------------------
   getEmails: async ({ status = 'all', search = '', page = 1, pageSize = 10 }) => {
-    await delay(600);
-    let filtered = emails;
-    
-    if (status !== 'all') {
-      filtered = filtered.filter(e => e.status === status);
+    if (USE_MOCK_DATA) {
+      const mockRawData = [
+          { id: '1', sender: 'test@example.com', subject: 'Invoice Mock', category: 'finance', status: 'sent', sent_time: new Date().toISOString() },
+          { id: '2', sender: 'user@domain.com', subject: 'Welcome Mock', category: 'onboarding', status: 'failed', sent_time: new Date().toISOString() }
+      ];
+      return { 
+        data: mockRawData.map(normalizeEmail), 
+        total: 2, page, page_size: pageSize 
+      };
     }
-    
-    if (search) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(e => e.recipient.toLowerCase().includes(s) || e.subject.toLowerCase().includes(s));
+    try {
+      const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+      const response = await axios.get(`${baseHost}/emails/`, { params: { status, search, skip: (page - 1) * pageSize, limit: pageSize } });
+      const responseData = response.data || response;
+      const rawData = validateArray(responseData.data, 'Emails');
+      const normalizedData = rawData.map(normalizeEmail);
+      return { data: normalizedData, total: responseData.total || rawData.length, page, page_size: pageSize };
+    } catch (e) {
+      console.error('Failed to fetch emails:', e);
+      throw e;
     }
-    
-    const start = (page - 1) * pageSize;
-    const paginated = filtered.slice(start, start + pageSize);
-    
-    return {
-      data: paginated,
-      total: filtered.length,
-      page,
-      page_size: pageSize
-    };
+  },
+
+  getEmailDetail: async (id) => {
+    if (USE_MOCK_DATA) {
+      return normalizeEmail({ id, subject: 'Mock Details', sender_email: 'mock@mock.com', body_text: 'Mock content', execution_timeline: [] });
+    }
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/emails/${id}`);
+    const responseData = response.data || response;
+    return normalizeEmail(responseData.data || responseData);
   },
   
   retryEmail: async (id) => {
-    await delay(800);
-    emails = emails.map(e => {
-      if (e.id === id) {
-        return { ...e, status: 'pending', retry_count: (e.retry_count || 0) + 1 };
-      }
-      return e;
-    });
-    return emails.find(e => e.id === id);
+    if (USE_MOCK_DATA) {
+      return { id, status: 'pending', sent_time: new Date().toISOString() };
+    }
+    const response = await axiosClient.post(`/emails/${id}/retry`);
+    return normalizeEmail(validateObject(response.data || response, 'Email Retry Response'));
   },
 
-  // Automation
+  getEmailStats: async () => {
+    if (USE_MOCK_DATA) {
+      return { total: 100, collected: 80, parsed: 10, completed: 5, failed: 5 };
+    }
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/emails/stats`);
+    return response.data || response;
+  },
+
+  exportEmails: async (status = 'all', search = '') => {
+    if (USE_MOCK_DATA) {
+      return; // Mock doesn't support real file download
+    }
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/emails/export`, {
+      params: { status, search },
+      responseType: 'blob'
+    });
+    
+    // Extract filename from headers or default
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `email-monitoring-export-${new Date().toISOString().split('T')[0]}.xlsx`;
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) filename = match[1];
+    }
+    
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  // ---------------------------------------------------------
+  // Automation Activity / Operations Dashboard
+  // ---------------------------------------------------------
+  getOperationsSummary: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/dashboard/summary`);
+    return response.data || {};
+  },
+  
+  getRecentActivity: async () => {
+    const response = await axiosClient.get('/dashboard/recent-activity');
+    return response || { data: [] };
+  },
+
+  getRecentSyncs: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/dashboard/recent-syncs?limit=5`);
+    return response.data;
+  },
+
+  getMailboxes: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/dashboard/mailboxes`);
+    return response.data;
+  },
+
   getCurrentTask: async () => {
-    await delay(400);
-    return {
-      task_id: "task_889",
-      task_name: "Invoice-Parsing-Cluster-B7",
-      description: "Advanced extraction of metadata from unstructured PDF payloads.",
-      progress: Math.floor(Math.random() * 40) + 50, // fluctuate between 50 and 90
-      eta_seconds: 12,
-      worker_id: "942"
-    };
+    if (USE_MOCK_DATA) {
+      return {
+        task_id: "mock-1",
+        task_name: "Mock Sync Task",
+        description: "Syncing mock emails...",
+        progress: 45,
+        eta_seconds: 12,
+        worker_id: "worker-1"
+      };
+    }
+    try {
+      // Axios interceptor unwraps APIResponse -> data = CurrentTaskResponse { current_task: {...} | null }
+      const response = await axiosClient.get('/automation/current-task');
+      return response?.current_task || null;
+    } catch (e) {
+      console.error('Failed to fetch current task:', e);
+      throw e;
+    }
   },
   
-  getAutomationQueue: async () => {
-    await delay(400);
-    return {
-      data: [
-        {
-          task_id: "task_890",
-          task_name: "Neural-Sentiment-Analysis",
-          batch_id: "88219",
-          status: "queued",
-          estimated_time: "45s"
-        },
-        {
-          task_id: "task_891",
-          task_name: "Sync-Gmail-Inbox-Primary",
-          batch_id: "88220",
-          status: "delayed",
-          estimated_time: "2m 30s"
-        }
-      ]
-    };
+  getAutomationQueue: async () => { 
+    if (USE_MOCK_DATA) {
+      return { data: [{ task_id: 'q-1', task_name: 'Process rules', status: 'queued', estimated_time: '2m' }] };
+    }
+    try {
+      // Axios interceptor unwraps APIResponse -> data = QueueResponse { data: [...], total: n }
+      const response = await axiosClient.get('/automation/queue');
+      const rawData = validateArray(response?.data || [], 'Automation Queue');
+      return { data: rawData, total: response?.total || rawData.length };
+    } catch (e) {
+      console.error('Failed to fetch automation queue:', e);
+      throw e;
+    }
   },
   
-  getAutomationHistory: async () => {
-    await delay(400);
-    return {
-      data: [
-        {
-          id: "hist_5521",
-          task_name: "User-Auth-Audit",
-          status: "success",
-          description: "Success: 1,202 logs scrubbed and validated.",
-          timestamp: new Date(Date.now() - 5 * 60000).toISOString()
-        },
-        {
-          id: "hist_5520",
-          task_name: "Report-Generation-Weekly",
-          status: "success",
-          description: "Generated 14 PDFs and dispatched.",
-          timestamp: new Date(Date.now() - 45 * 60000).toISOString()
-        },
-        {
-          id: "hist_5519",
-          task_name: "Webhook-Delivery-Client-B",
-          status: "failed",
-          description: "Timeout after 3 attempts.",
-          timestamp: new Date(Date.now() - 120 * 60000).toISOString()
-        }
-      ]
-    };
+  getAutomationHistory: async () => { 
+    if (USE_MOCK_DATA) {
+      return { 
+        data: [
+          { id: 'h-1', status: 'success', type: 'workflow_success', title: 'Workflow Executed', description: 'Step completed', timestamp: new Date().toISOString() }
+        ] 
+      };
+    }
+    try {
+      // Axios interceptor unwraps APIResponse -> data = HistoryResponse { data: [...], total, page, page_size }
+      const response = await axiosClient.get('/automation/history');
+      const rawData = validateArray(response?.data || [], 'Automation History');
+      return { data: rawData.map(normalizeWorkflowExecution), total: response?.total || 0 };
+    } catch (e) {
+      console.error('Failed to fetch automation history:', e);
+      throw e;
+    }
+  },
+
+  // ---------------------------------------------------------
+  // Notifications
+  // ---------------------------------------------------------
+  getNotifications: async () => {
+    if (USE_MOCK_DATA) {
+      return [
+        { id: '1', type: 'error', message: 'Workflow "Finance" failed on email "Invoice"', timestamp: new Date().toISOString() },
+        { id: '2', type: 'success', message: 'Workflow "Onboarding" matched a new email', timestamp: new Date(Date.now() - 3600000).toISOString() }
+      ];
+    }
+    const response = await axiosClient.get('/notifications');
+    return response || [];
   }
 };

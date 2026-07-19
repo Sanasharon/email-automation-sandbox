@@ -44,11 +44,16 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
       setLastUpdated(new Date());
     } catch (err) {
       if (!isSilentPoll) {
-        setError(err.message || 'An error occurred while fetching data');
+        // Only show 404 as a gentle empty state message rather than a generic error
+        if (err?.response?.status === 404) {
+          setError('Data not available (404 Not Found). This module may not be implemented yet.');
+        } else {
+          setError(err.message || 'An error occurred while fetching data');
+        }
       } else {
-        // For polling, we might want to track consecutive errors here
         console.error('Polling error:', err);
       }
+      throw err;
     } finally {
       setLoading(false);
       setIsPolling(false);
@@ -58,14 +63,52 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
   useEffect(() => {
     let mounted = true;
     let pollTimer;
+    let currentInterval = pollingInterval;
+    let consecutiveErrors = 0;
+
+    const executePoll = async () => {
+      if (!mounted) return;
+      try {
+        await fetchData(true);
+        consecutiveErrors = 0; // Reset on success
+        if (currentInterval !== pollingInterval && pollingInterval) {
+           // Restore normal interval if it recovered
+           currentInterval = pollingInterval;
+           clearInterval(pollTimer);
+           pollTimer = setInterval(executePoll, currentInterval);
+        }
+      } catch (err) {
+        // Axios errors have err.response.status
+        const status = err?.response?.status;
+        consecutiveErrors++;
+        
+        // If 404 Not Found, disable aggressive polling and switch to 60s
+        if (status === 404) {
+          console.warn(`[useLiveData] Endpoint returned 404. Slowing polling to 60s to prevent spam.`);
+          currentInterval = 60000;
+          clearInterval(pollTimer);
+          pollTimer = setInterval(executePoll, currentInterval);
+        } else if (consecutiveErrors > 3) {
+           // Backoff for other persistent errors
+           currentInterval = Math.min((currentInterval || 5000) * 2, 60000);
+           clearInterval(pollTimer);
+           pollTimer = setInterval(executePoll, currentInterval);
+        }
+      }
+    };
 
     const initialFetch = async () => {
-      await fetchData(false);
+      try {
+        await fetchData(false);
+      } catch (err) {
+        const status = err?.response?.status;
+        if (status === 404) {
+          currentInterval = 60000; // start slow immediately
+        }
+      }
       
-      if (mounted && pollingInterval) {
-        pollTimer = setInterval(() => {
-          fetchData(true);
-        }, pollingInterval);
+      if (mounted && currentInterval) {
+        pollTimer = setInterval(executePoll, currentInterval);
       }
     };
 
@@ -77,7 +120,7 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
     };
   }, [...dependencies, fetchData, pollingInterval, globalRefreshKey]);
 
-  const refresh = () => fetchData(false);
+  const refresh = () => fetchData(false).catch(() => {});
 
   const updateItem = useCallback((idField, idValue, updatedFields) => {
     setData(prev => {

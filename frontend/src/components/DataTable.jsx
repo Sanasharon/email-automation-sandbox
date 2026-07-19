@@ -8,6 +8,7 @@ export const DataTable = ({
   pageSize, 
   total, 
   onPageChange,
+  onPageSizeChange,
   emptyState,
   loading,
   loadingSkeleton
@@ -46,7 +47,7 @@ export const DataTable = ({
         </table>
       </div>
       {(total !== undefined && page && pageSize && onPageChange) && (
-        <Pagination total={total} page={page} pageSize={pageSize} onPageChange={onPageChange} />
+        <Pagination total={total} page={page} pageSize={pageSize} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} />
       )}
     </div>
   );

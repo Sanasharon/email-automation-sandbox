@@ -8,6 +8,7 @@ import { AutomationActivity } from './pages/AutomationActivity';
 import { AuthProvider } from './context/AuthContext';
 import { RefreshProvider } from './context/RefreshContext';
 import { ProtectedRoute } from './context/ProtectedRoute';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function App() {
   return (
@@ -16,15 +17,17 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
+              <ErrorBoundary>
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              </ErrorBoundary>
             }>
-              <Route index element={<DashboardOverview />} />
-          <Route path="workflows" element={<WorkflowControl />} />
-          <Route path="monitoring" element={<EmailMonitoring />} />
-          <Route path="automation" element={<AutomationActivity />} />
-              <Route path="automation/logs" element={<div className="p-8"><h2>Full Logs (Placeholder)</h2></div>} />
+              <Route index element={<ErrorBoundary><DashboardOverview /></ErrorBoundary>} />
+              <Route path="workflows" element={<ErrorBoundary><WorkflowControl /></ErrorBoundary>} />
+              <Route path="monitoring" element={<ErrorBoundary><EmailMonitoring /></ErrorBoundary>} />
+              <Route path="automation" element={<ErrorBoundary><AutomationActivity /></ErrorBoundary>} />
+              <Route path="automation/logs" element={<ErrorBoundary><div className="p-8"><h2>Full Logs (Placeholder)</h2></div></ErrorBoundary>} />
             </Route>
           </Routes>
         </BrowserRouter>

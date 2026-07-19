@@ -3,63 +3,66 @@ import { useLiveData } from '../../hooks/useLiveData';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import { DataTable } from '../../components/DataTable';
-import { FilterTabs } from '../../components/FilterTabs';
 import { SearchBar } from '../../components/SearchBar';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Modal } from '../../components/Modal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { LoadingSkeleton } from '../../components/LoadingSkeleton';
 import { EmptyState } from '../../components/EmptyState';
-import { Plus, Play, Square, Settings, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Plus, Play, Square, Trash2, Edit2, Check, X, PlusCircle, MinusCircle, GripVertical } from 'lucide-react';
 
 export const WorkflowControl = () => {
   const { canEdit } = useAuth();
-  const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState(null);
   const [deletingWorkflow, setDeletingWorkflow] = useState(null);
-  const [formData, setFormData] = useState({ name: '', trigger_type: 'webhook', schedule: '', category_filter: '', destination_team: '' });
+  const [viewingWorkflow, setViewingWorkflow] = useState(null);
+  const [workflowExecutions, setWorkflowExecutions] = useState([]);
+  
+  const defaultFormData = { 
+    name: '', 
+    description: '',
+    is_active: true,
+    trigger_type: 'automatic',
+    trigger_conditions_json: { operator: 'AND', rules: [{ field: 'subject', operator: 'contains', value: '' }] },
+    actions_json: { actions: [{ type: 'add_label', value: '' }] }
+  };
+  const [formData, setFormData] = useState(defaultFormData);
+  
   const [formError, setFormError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchWorkflows = useCallback(() => api.getWorkflows({ status: 'all', search, page, pageSize }), [search, page, pageSize]);
   const { data, loading, error, addItem, updateItem, removeItem } = useLiveData(fetchWorkflows, null, [fetchWorkflows]);
   
-  // Client-side filtering by status to avoid re-fetch on tab change
-  const filteredData = data?.data ? (activeTab === 'all' ? data.data : data.data.filter(w => w.status === activeTab)) : [];
-  const totalFiltered = data?.data ? (activeTab === 'all' ? data.total : filteredData.length) : 0;
-  
   const { data: categoriesData } = useLiveData(api.getCategories, null, []);
 
   const handleCreateEdit = async () => {
     setFormError(null);
-    if (!formData.name || formData.name.trim().length === 0) {
+    if (!formData.name?.trim()) {
       setFormError('Workflow name is required.');
       return;
     }
-    if (formData.name.length > 100) {
-      setFormError('Workflow name must be under 100 characters.');
-      return;
-    }
-    
-    // Sanitize input: React escapes automatically on render, but we can strip potentially harmful tags.
-    const sanitizedData = {
-      ...formData,
-      name: formData.name.replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    };
     
     setIsSubmitting(true);
     try {
+      const payload = {
+        ...formData,
+        name: formData.name.replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+        description: formData.description?.replace(/</g, "&lt;").replace(/>/g, "&gt;") || "No description"
+      };
+
       if (editingWorkflow) {
-        const updated = await api.updateWorkflow(editingWorkflow.id, sanitizedData);
+        const updated = await api.updateWorkflow(editingWorkflow.id, payload);
         updateItem('id', editingWorkflow.id, updated);
       } else {
-        const created = await api.createWorkflow(sanitizedData);
+        const created = await api.createWorkflow(payload);
         addItem(created);
       }
       setIsModalOpen(false);
@@ -91,28 +94,32 @@ export const WorkflowControl = () => {
 
   const columns = [
     { header: 'Workflow Name', accessor: 'name', cellClassName: 'font-medium text-on-surface' },
-    { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
-    { header: 'Trigger', accessor: 'trigger_type', render: (row) => <span className="uppercase text-xs">{row.trigger_type}</span> },
-    { header: 'Last Run', accessor: 'last_run', render: (row) => row.last_run ? new Date(row.last_run).toLocaleString() : 'Never' },
+    { header: 'Status', render: (row) => <StatusBadge status={row.status || (row.is_active ? 'active' : 'disabled')} /> },
+    { header: 'Trigger', render: (row) => <span className="text-body-md uppercase">{row.trigger_type || 'automatic'}</span> },
+    { header: 'Last Run', render: (row) => row.last_run ? new Date(row.last_run).toLocaleString() : 'Never' },
+    { header: 'Processed', render: (row) => row.execution_count || 0 },
     { header: 'Actions', render: (row) => (
       <div className="flex gap-2">
-        {row.status === 'running' ? (
-          <button onClick={() => handleAction(row.id, 'stop')} className="text-on-surface-variant hover:text-error transition-colors" title="Stop">
-            <Square size={16} />
-          </button>
-        ) : row.status === 'active' ? (
-          <button onClick={() => handleAction(row.id, 'start')} className="text-on-surface-variant hover:text-[#1A7F37] transition-colors" title="Start">
-            <Play size={16} />
-          </button>
+        <button onClick={async () => {
+          setViewingWorkflow(row);
+          setIsDetailsModalOpen(true);
+          try {
+            const execs = await api.getWorkflowExecutions(row.id);
+            setWorkflowExecutions(execs);
+          } catch (e) {
+            console.error("Failed to load executions", e);
+          }
+        }} className="text-on-surface-variant hover:text-primary transition-colors text-body-md" title="View Details">
+          View
+        </button>
+        {row.status === 'active' || row.is_active ? (
+           <button onClick={() => handleAction(row.id, 'disable')} className="text-on-surface-variant hover:text-error transition-colors" title="Disable">
+             <X size={16} />
+           </button>
         ) : (
           <button onClick={() => handleAction(row.id, 'enable')} className="text-on-surface-variant hover:text-[#1A7F37] transition-colors" title="Enable">
             <Check size={16} />
           </button>
-        )}
-        {(row.status === 'active' || row.status === 'running') && (
-           <button onClick={() => handleAction(row.id, 'disable')} className="text-on-surface-variant hover:text-error transition-colors" title="Disable">
-             <X size={16} />
-           </button>
         )}
         {canEdit && (
           <>
@@ -120,10 +127,11 @@ export const WorkflowControl = () => {
               setEditingWorkflow(row);
               setFormData({
                 name: row.name,
-                trigger_type: row.trigger_type,
-                schedule: row.schedule || '',
-                category_filter: row.category_filter || '',
-                destination_team: row.destination_team || ''
+                description: row.description || '',
+                is_active: row.is_active !== false,
+                trigger_type: row.trigger_type || 'automatic',
+                trigger_conditions_json: row.trigger_conditions_json || defaultFormData.trigger_conditions_json,
+                actions_json: row.actions_json || defaultFormData.actions_json
               });
               setIsModalOpen(true);
             }} className="text-on-surface-variant hover:text-primary transition-colors" title="Edit">
@@ -141,53 +149,93 @@ export const WorkflowControl = () => {
     ) }
   ];
 
-  const tabs = [
-    { id: 'all', label: 'All Workflows' },
-    { id: 'running', label: 'Running' },
-    { id: 'active', label: 'Active' },
-    { id: 'paused', label: 'Paused' },
-    { id: 'disabled', label: 'Disabled' }
-  ];
+  // Condition Builder Handlers
+  const addCondition = () => {
+    setFormData(prev => ({
+      ...prev,
+      trigger_conditions_json: {
+        ...prev.trigger_conditions_json,
+        rules: [...(prev.trigger_conditions_json.rules || []), { field: 'subject', operator: 'contains', value: '' }]
+      }
+    }));
+  };
+
+  const updateCondition = (index, key, value) => {
+    setFormData(prev => {
+      const newRules = [...prev.trigger_conditions_json.rules];
+      newRules[index] = { ...newRules[index], [key]: value };
+      return { ...prev, trigger_conditions_json: { ...prev.trigger_conditions_json, rules: newRules } };
+    });
+  };
+
+  const removeCondition = (index) => {
+    setFormData(prev => {
+      const newRules = [...prev.trigger_conditions_json.rules];
+      newRules.splice(index, 1);
+      return { ...prev, trigger_conditions_json: { ...prev.trigger_conditions_json, rules: newRules } };
+    });
+  };
+
+  // Action Builder Handlers
+  const addAction = () => {
+    setFormData(prev => ({
+      ...prev,
+      actions_json: {
+        actions: [...(prev.actions_json?.actions || []), { type: 'add_label', value: '' }]
+      }
+    }));
+  };
+
+  const updateAction = (index, key, value) => {
+    setFormData(prev => {
+      const newActions = [...prev.actions_json.actions];
+      newActions[index] = { ...newActions[index], [key]: value };
+      return { ...prev, actions_json: { actions: newActions } };
+    });
+  };
+
+  const removeAction = (index) => {
+    setFormData(prev => {
+      const newActions = [...prev.actions_json.actions];
+      newActions.splice(index, 1);
+      return { ...prev, actions_json: { actions: newActions } };
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <FilterTabs tabs={tabs} activeTab={activeTab} onChange={(id) => { setActiveTab(id); setPage(1); }} />
-        <div className="flex gap-4 w-full sm:w-auto">
+      <div className="flex justify-between items-center">
+        <h2 className="font-headline-sm text-on-surface">Workflows</h2>
+        <div className="flex gap-4">
           <SearchBar onSearch={(q) => { setSearch(q); setPage(1); }} placeholder="Search workflows..." />
           {canEdit && (
             <button 
               onClick={() => {
                 setEditingWorkflow(null);
-                setFormData({ name: '', trigger_type: 'webhook', schedule: '', category_filter: '', destination_team: '' });
+                setFormData(defaultFormData);
                 setIsModalOpen(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-md font-medium text-body-md hover:bg-primary/90 transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-md font-medium text-body-md hover:bg-primary/90 transition-colors"
             >
-              <Plus size={18} />
-              <span>Create</span>
+              <Plus size={18} /> Create Workflow
             </button>
           )}
         </div>
       </div>
 
-      {error && (
-        <div className="bg-error-container text-on-error-container p-4 rounded-md text-body-md">
-          {error}
-        </div>
-      )}
+      {error && <div className="bg-error-container text-on-error-container p-4 rounded-md text-body-md">{error}</div>}
 
       <div className="flat-card overflow-hidden">
         <DataTable
           columns={columns}
-          data={filteredData}
+          data={data?.data || []}
           page={page}
           pageSize={pageSize}
-          total={totalFiltered}
+          total={data?.total || 0}
           onPageChange={setPage}
           loading={loading}
           loadingSkeleton={<LoadingSkeleton type="table" rows={5} />}
-          emptyState={<EmptyState message="No workflows found matching your criteria." actionText="Create Workflow" onAction={() => setIsModalOpen(true)} />}
+          emptyState={<EmptyState message="No workflows found." actionText="Create Workflow" onAction={() => setIsModalOpen(true)} />}
         />
       </div>
 
@@ -196,84 +244,130 @@ export const WorkflowControl = () => {
         onClose={() => !isSubmitting && setIsModalOpen(false)} 
         title={editingWorkflow ? 'Edit Workflow' : 'Create Workflow'}
       >
-        <div className="flex flex-col gap-4 py-2">
-          {formError && <div className="text-error text-body-md p-2 bg-error-container/20 rounded">{formError}</div>}
+        <div className="flex flex-col gap-8 py-2 max-h-[70vh] overflow-y-auto px-1">
+          {formError && <div className="text-error text-body-md p-3 bg-error-container/20 rounded border border-error/30">{formError}</div>}
           
-          <div className="flex flex-col gap-1">
-            <label className="text-label-bold text-on-surface-variant">Name</label>
-            <input 
-              type="text" 
-              value={formData.name} 
-              onChange={e => setFormData({...formData, name: e.target.value})} 
-              className="px-3 py-2 border border-outline-variant rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-              disabled={isSubmitting}
-            />
-          </div>
-          
-          <div className="flex flex-col gap-1">
-            <label className="text-label-bold text-on-surface-variant">Trigger Type</label>
-            <select 
-              value={formData.trigger_type} 
-              onChange={e => setFormData({...formData, trigger_type: e.target.value})}
-              className="px-3 py-2 border border-outline-variant rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-              disabled={isSubmitting}
-            >
-              <option value="webhook">Webhook</option>
-              <option value="cron">Cron Schedule</option>
-              <option value="api_poll">API Poll</option>
-              <option value="manual">Manual</option>
-            </select>
-          </div>
-
-          {formData.trigger_type === 'cron' && (
-            <div className="flex flex-col gap-1">
-              <label className="text-label-bold text-on-surface-variant">Schedule (Cron)</label>
-              <input 
-                type="text" 
-                value={formData.schedule} 
-                onChange={e => setFormData({...formData, schedule: e.target.value})} 
-                placeholder="*/10 * * * *"
-                className="px-3 py-2 border border-outline-variant rounded-md focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                disabled={isSubmitting}
-              />
+          {/* SECTION 1: GENERAL */}
+          <section className="space-y-4">
+            <h3 className="text-label-lg font-bold text-primary uppercase tracking-wider border-b border-outline-variant pb-2">1. General Information</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 flex flex-col gap-1">
+                <label className="text-label-bold text-on-surface-variant">Name</label>
+                <input 
+                  type="text" 
+                  value={formData.name} 
+                  onChange={e => setFormData({...formData, name: e.target.value})} 
+                  className="px-3 py-2 border border-outline-variant rounded-md focus:ring-1 focus:ring-primary"
+                  placeholder="e.g. Route Invoices"
+                />
+              </div>
+              <div className="col-span-2 flex flex-col gap-1">
+                <label className="text-label-bold text-on-surface-variant">Description</label>
+                <input 
+                  type="text" 
+                  value={formData.description} 
+                  onChange={e => setFormData({...formData, description: e.target.value})} 
+                  className="px-3 py-2 border border-outline-variant rounded-md focus:ring-1 focus:ring-primary"
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-label-bold text-on-surface-variant">Status</label>
+                <select 
+                  value={formData.is_active ? 'active' : 'disabled'}
+                  onChange={e => setFormData({...formData, is_active: e.target.value === 'active'})}
+                  className="px-3 py-2 border border-outline-variant rounded-md focus:ring-1 focus:ring-primary"
+                >
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
             </div>
-          )}
+          </section>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-label-bold text-on-surface-variant">Category Filter</label>
-            <select 
-              value={formData.category_filter} 
-              onChange={e => {
-                const cat = categoriesData?.data?.find(c => c.category === e.target.value);
-                setFormData({...formData, category_filter: e.target.value, destination_team: cat ? cat.department : ''});
-              }}
-              className="px-3 py-2 border border-outline-variant rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-              disabled={isSubmitting}
-            >
-              <option value="">Any Category</option>
-              {categoriesData?.data?.map(c => (
-                <option key={c.category} value={c.category}>{c.category}</option>
+          {/* SECTION 2: TRIGGER */}
+          <section className="space-y-4">
+            <h3 className="text-label-lg font-bold text-primary uppercase tracking-wider border-b border-outline-variant pb-2">2. Trigger</h3>
+            <div className="flex flex-col gap-1">
+              <select 
+                value={formData.trigger_type} 
+                onChange={e => setFormData({...formData, trigger_type: e.target.value})}
+                className="px-3 py-2 border border-outline-variant rounded-md w-full focus:ring-1 focus:ring-primary"
+              >
+                <option value="automatic">Automatic (On Inbound Email)</option>
+                <option value="manual">Manual Run</option>
+              </select>
+            </div>
+          </section>
+
+          {/* SECTION 3: CONDITIONS */}
+          <section className="space-y-4">
+            <h3 className="text-label-lg font-bold text-primary uppercase tracking-wider border-b border-outline-variant pb-2 flex justify-between items-center">
+              3. Conditions
+              <select 
+                value={formData.trigger_conditions_json.operator}
+                onChange={(e) => setFormData(p => ({...p, trigger_conditions_json: {...p.trigger_conditions_json, operator: e.target.value}}))}
+                className="text-xs px-2 py-1 border border-outline-variant rounded bg-surface-container-lowest"
+              >
+                <option value="AND">Match ALL (AND)</option>
+                <option value="OR">Match ANY (OR)</option>
+              </select>
+            </h3>
+            <div className="space-y-3">
+              {formData.trigger_conditions_json.rules?.map((rule, idx) => (
+                <div key={idx} className="flex gap-2 items-center bg-surface-container-lowest p-2 border border-outline-variant rounded-md">
+                  <select value={rule.field} onChange={(e) => updateCondition(idx, 'field', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1">
+                    <option value="sender">Sender</option>
+                    <option value="subject">Subject</option>
+                    <option value="label">Gmail Label</option>
+                    <option value="has_attachment">Has Attachment</option>
+                  </select>
+                  <select value={rule.operator} onChange={(e) => updateCondition(idx, 'operator', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1">
+                    <option value="contains">Contains</option>
+                    <option value="equals">Equals</option>
+                    <option value="starts_with">Starts With</option>
+                  </select>
+                  <input type="text" value={rule.value} onChange={(e) => updateCondition(idx, 'value', e.target.value)} placeholder="Value..." className="p-2 border border-outline-variant rounded bg-surface flex-1" />
+                  <button onClick={() => removeCondition(idx)} className="p-2 text-on-surface-variant hover:text-error"><Trash2 size={16}/></button>
+                </div>
               ))}
-            </select>
-          </div>
+              <button onClick={addCondition} className="text-primary text-body-md font-medium flex items-center gap-1 hover:underline">
+                <PlusCircle size={16} /> Add Condition
+              </button>
+            </div>
+          </section>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-label-bold text-on-surface-variant">Destination Team</label>
-            <input 
-              type="text" 
-              value={formData.destination_team} 
-              readOnly 
-              className="px-3 py-2 border border-outline-variant rounded-md bg-surface-container-low text-on-surface-variant cursor-not-allowed"
-            />
-            <span className="text-[10px] text-on-surface-variant">Auto-filled based on category routing matrix</span>
-          </div>
+          {/* SECTION 4: ACTIONS */}
+          <section className="space-y-4">
+            <h3 className="text-label-lg font-bold text-primary uppercase tracking-wider border-b border-outline-variant pb-2">4. Actions</h3>
+            <div className="space-y-3">
+              {formData.actions_json.actions?.map((action, idx) => (
+                <div key={idx} className="flex gap-2 items-center bg-surface-container-lowest p-2 border border-outline-variant rounded-md">
+                  <span className="text-on-surface-variant"><GripVertical size={16} /></span>
+                  <select value={action.type} onChange={(e) => updateAction(idx, 'type', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1">
+                    <option value="add_label">Add Gmail Label</option>
+                    <option value="move_to_category">Assign Category</option>
+                    <option value="mark_important">Mark Important</option>
+                    <option value="archive">Archive Email</option>
+                    <option value="forward" disabled>Forward Email (Coming Soon)</option>
+                    <option value="auto_reply" disabled>Auto Reply (Coming Soon)</option>
+                  </select>
+                  <input type="text" value={action.value || ''} onChange={(e) => updateAction(idx, 'value', e.target.value)} placeholder="Value (e.g. INVOICE)" className="p-2 border border-outline-variant rounded bg-surface flex-1" />
+                  <button onClick={() => removeAction(idx)} className="p-2 text-on-surface-variant hover:text-error"><Trash2 size={16}/></button>
+                </div>
+              ))}
+              <button onClick={addAction} className="text-primary text-body-md font-medium flex items-center gap-1 hover:underline">
+                <PlusCircle size={16} /> Add Action
+              </button>
+            </div>
+          </section>
 
-          <div className="flex justify-end gap-3 mt-4">
-            <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-4 py-2 border border-outline-variant rounded-md text-on-surface-variant hover:bg-surface-container-highest">Cancel</button>
-            <button onClick={handleCreateEdit} disabled={isSubmitting} className="px-4 py-2 bg-primary text-on-primary rounded-md hover:bg-primary/90 disabled:opacity-70">
-              {isSubmitting ? 'Saving...' : 'Save Workflow'}
-            </button>
-          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
+          <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-4 py-2 border border-outline-variant rounded-md text-on-surface-variant hover:bg-surface-container-highest">Cancel</button>
+          <button onClick={handleCreateEdit} disabled={isSubmitting} className="px-6 py-2 bg-primary text-on-primary font-medium rounded-md hover:bg-primary/90 disabled:opacity-70 flex items-center gap-2">
+            {isSubmitting ? 'Saving...' : 'Save Workflow'}
+          </button>
         </div>
       </Modal>
 
@@ -281,11 +375,64 @@ export const WorkflowControl = () => {
         isOpen={isDeleteDialogOpen} 
         onClose={() => setIsDeleteDialogOpen(false)}
         title="Delete Workflow"
-        message={`Are you sure you want to delete "${deletingWorkflow?.name}"? This action cannot be undone.`}
+        message={`Are you sure you want to delete "${deletingWorkflow?.name}"?`}
         confirmText="Delete"
         isDestructive={true}
         onConfirm={handleDelete}
       />
+
+      <Modal 
+        isOpen={isDetailsModalOpen} 
+        onClose={() => setIsDetailsModalOpen(false)} 
+        title="Workflow Details"
+      >
+        {viewingWorkflow && (
+          <div className="flex flex-col gap-6 py-2 max-h-[75vh] overflow-y-auto px-1">
+            <section className="space-y-2">
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">General Info</h3>
+              <div className="grid grid-cols-2 gap-2 text-body-md">
+                <div><span className="font-bold text-on-surface-variant">Name:</span> {viewingWorkflow.name}</div>
+                <div><span className="font-bold text-on-surface-variant">Status:</span> <StatusBadge status={viewingWorkflow.is_active ? 'active' : 'disabled'} /></div>
+                <div className="col-span-2"><span className="font-bold text-on-surface-variant">Description:</span> {viewingWorkflow.description || 'N/A'}</div>
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Conditions</h3>
+              <div className="bg-surface-container-lowest p-3 rounded border border-outline-variant text-body-sm whitespace-pre-wrap">
+                {JSON.stringify(viewingWorkflow.trigger_conditions_json, null, 2)}
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Actions</h3>
+              <div className="bg-surface-container-lowest p-3 rounded border border-outline-variant text-body-sm whitespace-pre-wrap">
+                {JSON.stringify(viewingWorkflow.actions_json, null, 2)}
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Recent Executions</h3>
+              {workflowExecutions.length === 0 ? (
+                <div className="text-body-md text-on-surface-variant italic">No recent executions.</div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {workflowExecutions.map(ex => (
+                    <div key={ex.id} className="flex justify-between items-center p-2 border border-outline-variant rounded bg-surface-container-lowest text-body-sm">
+                      <div className="flex flex-col">
+                        <span className="font-medium">{new Date(ex.executed_at).toLocaleString()}</span>
+                        <span className="text-on-surface-variant text-xs">Email ID: {ex.email_id.substring(0,8)}...</span>
+                      </div>
+                      <StatusBadge status={ex.status} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
+

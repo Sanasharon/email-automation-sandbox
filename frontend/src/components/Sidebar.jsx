@@ -3,12 +3,13 @@ import { NavLink } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
-  const navItems = [
+  const mainNavItems = [
     { name: 'Dashboard', path: '/', icon: 'dashboard' },
     { name: 'Workflows', path: '/workflows', icon: 'account_tree' },
     { name: 'Email Monitoring', path: '/monitoring', icon: 'mail' },
     { name: 'Automation', path: '/automation', icon: 'settings_suggest' },
   ];
+
 
   return (
     <>
@@ -30,7 +31,7 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
             <span className="text-[12px] text-surface-variant tracking-wide block mt-1">AI Email Automation</span>
           </div>
           <nav className="space-y-1">
-            {navItems.map((item) => (
+            {mainNavItems.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -49,6 +50,8 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
                 <span>{item.name}</span>
               </NavLink>
             ))}
+
+
           </nav>
         </div>
         <div className="mt-auto px-6 py-6 border-t border-white/10">

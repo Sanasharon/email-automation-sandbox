@@ -1,6 +1,7 @@
 import { Menu, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useGlobalRefresh } from '../context/RefreshContext';
+import { NotificationsDropdown } from './NotificationsDropdown';
 
 export const Header = ({ title, toggleSidebar }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -28,6 +29,7 @@ export const Header = ({ title, toggleSidebar }) => {
         >
           <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
         </button>
+        <NotificationsDropdown />
         <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-lg">
           <span className="w-2 h-2 bg-[#1A7F37] rounded-full animate-pulse"></span>
           <span className="text-label-bold text-on-surface-variant tracking-wider">SYSTEM LIVE</span>

@@ -1,0 +1,42 @@
+# Testing and Dummy Files
+tests/
+test/
+__tests__/
+*.test.js
+*.spec.js
+*.test.jsx
+*.spec.jsx
+test_*.py
+*_test.py
+dummy/
+mock/
+mock_data/
+mockData.json
+
+# Screens and Screenshots
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+screenshots/
+screens/
+click_feedback/
+
+# Auditing and Artifacts
+artifacts/
+audit/
+audits/
+.system_generated/
+scratch/
+brain/
+scratchpad*/
+*.md
+!README.md
+
+# Implementations / Misc testing
+sandbox/
+temp/
+tmp/
+*.tmp
+*.temp
