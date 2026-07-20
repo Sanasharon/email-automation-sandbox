@@ -7,7 +7,7 @@ SQLAlchemy==2.0.27
 psycopg2-binary==2.9.9
 supabase==2.3.6
 APScheduler==3.10.4
-pydantic==2.6.1
+pydantic[email]==2.6.1
 pydantic-settings==2.1.0
 cryptography==42.0.2
 pytest==8.0.0

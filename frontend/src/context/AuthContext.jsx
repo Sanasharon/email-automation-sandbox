@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1';
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
   useEffect(() => {
     const fetchUser = async () => {
