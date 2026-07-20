@@ -47,6 +47,11 @@ The backend handles Google OAuth, email fetching, workflow automation, and expos
    .\venv\Scripts\activate
    # macOS/Linux:
    source venv/bin/activate
+
+
+
+   <!-- important :::::: Before running the server,
+    <!-- you must set up your Google Cloud credentials. Please follow the step-by-step instructions in the gmail-data-collection-engine/gmail-data-collection-engine/docs/oauth-setup.md file. --> -->
    ```
 3. Install dependencies:
    ```bash
