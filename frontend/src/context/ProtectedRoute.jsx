@@ -1,15 +1,24 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import React from 'react';
 
 export const ProtectedRoute = ({ children }) => {
-  const { user } = useAuth();
+  const { token, loading } = useAuth();
+  const location = useLocation();
   
-  // For now, always allow access since backend auth isn't integrated yet.
-  // TODO: Swap this to check for `!token` or `!user` and redirect to /login
-  const isAuthenticated = true; 
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="flex flex-col items-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+          <p className="mt-4 text-sm font-medium text-gray-500">Authenticating...</p>
+        </div>
+      </div>
+    );
+  }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  if (!token) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;

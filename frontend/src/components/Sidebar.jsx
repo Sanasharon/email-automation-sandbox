@@ -1,15 +1,71 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { Menu } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { Menu, LogOut, Settings, User } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
-  const mainNavItems = [
-    { name: 'Dashboard', path: '/', icon: 'dashboard' },
-    { name: 'Workflows', path: '/workflows', icon: 'account_tree' },
-    { name: 'Email Monitoring', path: '/monitoring', icon: 'mail' },
-    { name: 'Automation', path: '/automation', icon: 'settings_suggest' },
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
+
+  const operationsNavItems = [
+    { name: 'Dashboard', path: '/', icon: 'dashboard', roles: ['Admin', 'Editor', 'Viewer'] },
+    { name: 'Workflows', path: '/workflows', icon: 'account_tree', roles: ['Admin', 'Editor', 'Viewer'] },
+    { name: 'Email Monitoring', path: '/monitoring', icon: 'mail', roles: ['Admin', 'Editor', 'Viewer'] },
+    { name: 'Automation', path: '/automation', icon: 'settings_suggest', roles: ['Admin', 'Editor', 'Viewer'] },
   ];
 
+  const adminNavItems = [
+    { name: 'Users', path: '/users', icon: 'group', roles: ['Admin'] },
+    { name: 'Roles', path: '/roles', icon: 'admin_panel_settings', roles: ['Admin'] },
+    { name: 'Templates', path: '/templates', icon: 'description', roles: ['Admin', 'Editor'] },
+    { name: 'Logs', path: '/logs', icon: 'list_alt', roles: ['Admin'] },
+    { name: 'Settings', path: '/settings', icon: 'settings', roles: ['Admin'] },
+    { name: 'System Monitoring', path: '/system-monitoring', icon: 'monitor_heart', roles: ['Admin'] },
+  ];
+
+  const canSee = (item) => {
+    if (!user || !user.role) return false;
+    return item.roles.includes(user.role);
+  };
+
+  const renderNavItems = (items) => (
+    items.filter(canSee).map((item) => (
+      <NavLink
+        key={item.path}
+        to={item.path}
+        className={({ isActive }) => 
+          `flex items-center px-4 py-3 transition-colors active:opacity-80 ${
+            isActive 
+              ? 'text-on-primary font-label-bold border-l-2 border-primary bg-secondary-container/10' 
+              : 'text-surface-variant font-label-md hover:bg-surface-container-highest hover:text-on-surface border-l-2 border-transparent'
+          }`
+        }
+        onClick={() => {
+          if (window.innerWidth < 768) toggleSidebar();
+        }}
+      >
+        <span className="material-symbols-outlined mr-3 text-[20px]">{item.icon}</span>
+        <span>{item.name}</span>
+      </NavLink>
+    ))
+  );
 
   return (
     <>
@@ -31,45 +87,56 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
             <span className="text-[12px] text-surface-variant tracking-wide block mt-1">AI Email Automation</span>
           </div>
           <nav className="space-y-1">
-            {mainNavItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) => 
-                  `flex items-center px-4 py-3 transition-colors active:opacity-80 ${
-                    isActive 
-                      ? 'text-on-primary font-label-bold border-l-2 border-primary bg-secondary-container/10' 
-                      : 'text-surface-variant font-label-md hover:bg-surface-container-highest hover:text-on-surface border-l-2 border-transparent'
-                  }`
-                }
-                onClick={() => {
-                  if (window.innerWidth < 768) toggleSidebar();
-                }}
-              >
-                <span className="material-symbols-outlined mr-3 text-[20px]">{item.icon}</span>
-                <span>{item.name}</span>
-              </NavLink>
-            ))}
-
-
+            <div className="px-4 py-2 text-xs font-bold text-surface-variant uppercase tracking-wider">Operations</div>
+            {renderNavItems(operationsNavItems)}
+            
+            {adminNavItems.filter(canSee).length > 0 && (
+              <>
+                <div className="px-4 py-2 mt-4 text-xs font-bold text-surface-variant uppercase tracking-wider">Administration</div>
+                {renderNavItems(adminNavItems)}
+              </>
+            )}
           </nav>
         </div>
-        <div className="mt-auto px-6 py-6 border-t border-white/10">
-          {/* TODO: Bind to real authenticated user object once auth is integrated. (Currently hardcoded) */}
-          <div className="flex items-center gap-3">
+        
+        <div className="mt-auto border-t border-white/10 relative" ref={dropdownRef}>
+          {dropdownOpen && (
+            <div className="absolute bottom-full left-4 right-4 mb-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl shadow-2xl overflow-hidden z-[60] transform origin-bottom">
+              <div className="p-4 border-b border-[#3a3a3a] bg-[#222]">
+                <p className="text-white font-label-bold text-sm truncate">{user?.name || 'User'}</p>
+                <p className="text-gray-400 text-xs truncate">{user?.email || ''}</p>
+              </div>
+              <div className="py-1">
+                <button className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-white/10 flex items-center gap-2 transition-colors">
+                  <User size={16} /> My Profile
+                </button>
+                <button className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-white/10 flex items-center gap-2 transition-colors">
+                  <Settings size={16} /> Account Settings
+                </button>
+              </div>
+              <div className="py-1 border-t border-[#3a3a3a]">
+                <button onClick={handleLogout} className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/20 flex items-center gap-2 transition-colors">
+                  <LogOut size={16} /> Logout
+                </button>
+              </div>
+            </div>
+          )}
+          
+          <div 
+            className="px-6 py-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center gap-3"
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+          >
             <div className="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center text-on-primary font-bold">
-              AU
+              {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
-            <div>
-              <p className="text-white font-label-bold text-label-md">Admin User</p>
-              <p className="text-surface-variant text-[11px]">Enterprise Plan</p>
+            <div className="flex-1 overflow-hidden">
+              <p className="text-white font-label-bold text-label-md truncate">{user?.name || 'Loading...'}</p>
+              <p className="text-surface-variant text-[11px] truncate">{user?.role || 'User'}</p>
             </div>
-          </div>
-          <div className="mt-4 text-surface-variant text-[10px] uppercase tracking-widest font-bold">
-            v2.4.0
           </div>
         </div>
       </aside>
     </>
   );
 };
+

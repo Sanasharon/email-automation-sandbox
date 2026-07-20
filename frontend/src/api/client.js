@@ -14,13 +14,22 @@ const validateObject = (data, name) => {
   return data;
 };
 // Create Axios client using environment variable or default to localhost
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1';
 
 const axiosClient = axios.create({
   baseURL,
   headers: {
     'Content-Type': 'application/json'
   }
+});
+
+// Intercept requests to attach auth token
+axiosClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 // Intercept responses to unwrap the `APIResponse` generic structure
@@ -34,7 +43,43 @@ axiosClient.interceptors.response.use(
     return resData;
   },
   (error) => {
-    console.error("API Error:", error);
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    } else if (!error.response) {
+      console.error("Network Failure: Backend is unreachable.", error);
+    } else if (error.response?.status >= 500) {
+      console.error("Server Error: Something went wrong on the backend.", error);
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Add global interceptors for raw axios calls as well
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    } else if (!error.response) {
+      console.error("Network Failure: Backend is unreachable.");
+      // Could dispatch a global event here for a toast notification
+    } else if (error.response?.status >= 500) {
+      console.error("Server Error: Something went wrong on the backend.");
+    }
     return Promise.reject(error);
   }
 );
@@ -178,8 +223,11 @@ export const api = {
       };
     }
     try {
-      const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-      const response = await axios.get(`${baseHost}/emails/`, { params: { status, search, skip: (page - 1) * pageSize, limit: pageSize } });
+      const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
+      const response = await axios.get(`${baseHost}/emails/`, { 
+        params: { status, search, skip: (page - 1) * pageSize, limit: pageSize },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
       const responseData = response.data || response;
       const rawData = validateArray(responseData.data, 'Emails');
       const normalizedData = rawData.map(normalizeEmail);
@@ -194,8 +242,10 @@ export const api = {
     if (USE_MOCK_DATA) {
       return normalizeEmail({ id, subject: 'Mock Details', sender_email: 'mock@mock.com', body_text: 'Mock content', execution_timeline: [] });
     }
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.get(`${baseHost}/emails/${id}`);
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/emails/${id}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
     const responseData = response.data || response;
     return normalizeEmail(responseData.data || responseData);
   },
@@ -212,8 +262,10 @@ export const api = {
     if (USE_MOCK_DATA) {
       return { total: 100, collected: 80, parsed: 10, completed: 5, failed: 5 };
     }
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.get(`${baseHost}/emails/stats`);
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/emails/stats`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
     return response.data || response;
   },
 
@@ -221,10 +273,11 @@ export const api = {
     if (USE_MOCK_DATA) {
       return; // Mock doesn't support real file download
     }
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
     const response = await axios.get(`${baseHost}/emails/export`, {
       params: { status, search },
-      responseType: 'blob'
+      responseType: 'blob',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
     
     // Extract filename from headers or default
@@ -250,7 +303,7 @@ export const api = {
   // Automation Activity / Operations Dashboard
   // ---------------------------------------------------------
   getOperationsSummary: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
     const response = await axios.get(`${baseHost}/dashboard/summary`);
     return response.data || {};
   },
@@ -261,13 +314,13 @@ export const api = {
   },
 
   getRecentSyncs: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
     const response = await axios.get(`${baseHost}/dashboard/recent-syncs?limit=5`);
     return response.data;
   },
 
   getMailboxes: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1').replace('/api/v1', '');
     const response = await axios.get(`${baseHost}/dashboard/mailboxes`);
     return response.data;
   },

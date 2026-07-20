@@ -1,16 +1,30 @@
-# React + Vite
+# Email Automation Dashboard - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is the React frontend for the Email Automation Dashboard, built using Vite, Tailwind CSS, and React Router.
 
-Currently, two official plugins are available:
+## 🚀 Quick Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
 
-## React Compiler
+2. **Start Development Server:**
+   ```bash
+   npm run dev
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. **Build for Production:**
+   ```bash
+   npm run build
+   ```
 
-## Expanding the Oxlint configuration
+## 📁 Key Directories
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- `/src/components` - Reusable UI components (buttons, modals, layout).
+- `/src/pages` - Main views (Dashboard, Workflows, Email Monitor, Administration).
+- `/src/utils` - Helper functions and API clients.
+
+## 🔗 Environment Setup
+
+By default, the Vite dev server expects the FastAPI backend to be running on `http://localhost:8000`. If you need to configure the API base URL, ensure you review any `.env` requirements or proxy configurations in `vite.config.js` or API utility files.
