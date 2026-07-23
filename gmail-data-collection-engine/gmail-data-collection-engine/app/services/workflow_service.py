@@ -12,8 +12,8 @@ class WorkflowService(BaseService):
         super().__init__(db)
         self.repository = WorkflowRepository(db)
 
-    def get_workflows(self, status: Optional[str], search: Optional[str], page: int, page_size: int) -> PaginatedResponse:
-        query = self.repository.get_query(status=status, search=search)
+    def get_workflows(self, status: Optional[str], search: Optional[str], page: int, page_size: int, user_id: Optional[str] = None) -> PaginatedResponse:
+        query = self.repository.get_query(status=status, search=search, user_id=user_id)
         items, meta = paginate_query(query, page, page_size)
         return PaginatedResponse(data=items, meta=meta)
 

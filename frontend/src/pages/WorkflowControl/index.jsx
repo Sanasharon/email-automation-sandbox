@@ -11,12 +11,24 @@ import { LoadingSkeleton } from '../../components/LoadingSkeleton';
 import { EmptyState } from '../../components/EmptyState';
 import { Plus, Play, Square, Trash2, Edit2, Check, X, PlusCircle, MinusCircle, GripVertical } from 'lucide-react';
 
+import { AlertTriangle, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
 export const WorkflowControl = () => {
+  const navigate = useNavigate();
   const { canEdit } = useAuth();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
   
+  const [mailboxes, setMailboxes] = useState([]);
+  useEffect(() => {
+    api.getMailboxes().then(res => setMailboxes(Array.isArray(res) ? res : [])).catch(() => setMailboxes([]));
+  }, []);
+  
+  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
+  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);

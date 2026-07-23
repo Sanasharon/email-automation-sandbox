@@ -16,6 +16,7 @@ from starlette.background import BackgroundTask
 from datetime import datetime
 
 from app.auth.dependencies import get_current_user
+from app.models.mailbox_account import MailboxAccount
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,14 @@ def list_emails(
     search: str = Query(""),
     skip: int = Query(0, ge=0), 
     limit: int = Query(100, ge=1, le=100), 
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(Email)
+    user_id = current_user["id"]
+    user_mailbox_ids = [m.id for m in db.query(MailboxAccount).filter(or_(MailboxAccount.user_id == user_id, MailboxAccount.user_id == None)).all()]
+    if user_mailbox_ids:
+        query = query.filter(Email.mailbox_account_id.in_(user_mailbox_ids))
     
     if status != "all":
         # 'completed' in UI maps to 'parsed' or 'completed' in DB
@@ -50,7 +56,7 @@ def list_emails(
             Email.retention_category, Email.has_attachments, 
             Email.provider_message_id, Email.provider_thread_id
         )
-    ).order_by(Email.received_at.desc()).offset(skip).limit(limit).all()
+    ).order_by(Email.received_at.desc().nulls_last()).offset(skip).limit(limit).all()
     
     email_ids = [e.id for e in emails]
     

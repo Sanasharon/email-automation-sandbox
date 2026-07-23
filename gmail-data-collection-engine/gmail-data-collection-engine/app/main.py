@@ -6,15 +6,18 @@ from app.middleware.logging import StructuredLoggingMiddleware
 from app.core.exceptions import global_exception_handler
 import logging
 
+from app.scheduler.startup import lifespan
+
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="Utservio Gmail Communication Data Collection Engine",
-    description="Secure backend service for Gmail email synchronization, attachment processing, and Supabase data storage. Sprint 2 — Data Collection Foundation.",
+    description="Secure backend service for Gmail email synchronization, attachment processing, and Supabase data storage.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Exception Handlers

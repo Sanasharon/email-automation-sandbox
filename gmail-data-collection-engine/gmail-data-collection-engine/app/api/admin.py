@@ -18,6 +18,7 @@ from app.schemas.admin import (
     AttachmentMinimalResponse
 )
 from app.clients.supabase_client import get_supabase_client
+from app.scheduler.scheduler_service import scheduler_service
 
 admin_router = APIRouter(
     prefix="/admin",
@@ -41,6 +42,9 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     
     last_sync = db.query(func.max(SyncRun.started_at)).scalar()
     
+    sched_status = scheduler_service.get_status()
+    status_str = "running" if sched_status["is_running"] else "stopped"
+    
     return DashboardSummaryResponse(
         total_mailboxes=total_mailboxes,
         total_emails=total_emails,
@@ -49,7 +53,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         successful_syncs=successful_syncs,
         failed_syncs=failed_syncs,
         last_sync_time=last_sync,
-        scheduler_status="running" # Stub for now, normally checked via APScheduler
+        scheduler_status=status_str
     )
 
 @admin_router.get(
@@ -92,7 +96,7 @@ def list_emails(
     if sender:
         query = query.filter(Email.sender_email.ilike(f"%{sender}%"))
         
-    emails = query.order_by(desc(Email.received_at)).offset(skip).limit(limit).all()
+    emails = query.order_by(Email.received_at.desc().nulls_last()).offset(skip).limit(limit).all()
     
     return [
         EmailAdminListResponse(

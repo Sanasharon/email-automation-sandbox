@@ -12,6 +12,7 @@ Handles the full lifecycle of email sync:
 import logging
 import traceback
 import uuid
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from googleapiclient.errors import HttpError
@@ -312,10 +313,14 @@ class SyncOrchestrator:
                     status = "partial_failure"
                     # We still advance the cursor on partial failure so we don't get deadlocked
                     account.last_history_id = sync_cursor_after
+                    account.last_sync_at = datetime.now(timezone.utc)
+                    account.sync_status = "connected"
                     self.db.commit()
                 else:
                     status = "completed"
                     account.last_history_id = sync_cursor_after
+                    account.last_sync_at = datetime.now(timezone.utc)
+                    account.sync_status = "connected"
                     self.db.commit()
                     
             except KeyboardInterrupt:

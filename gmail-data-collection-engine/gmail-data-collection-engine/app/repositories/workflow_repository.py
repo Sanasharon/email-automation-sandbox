@@ -8,13 +8,19 @@ class WorkflowRepository(BaseRepository[Workflow, WorkflowCreate, WorkflowUpdate
     def __init__(self, db: Session):
         super().__init__(Workflow, db)
 
-    def get_query(self, status: Optional[str] = None, search: Optional[str] = None) -> Query:
+    def get_query(self, status: Optional[str] = None, search: Optional[str] = None, user_id: Optional[str] = None) -> Query:
         """
-        Builds an SQLAlchemy query for workflows based on optional filters.
-        This is passed to the Pagination utility in the Service layer.
+        Builds an SQLAlchemy query for workflows based on optional status, search, and user_id filters.
         """
         query = self.db.query(self.model)
         
+        if user_id:
+            from app.models.mailbox_account import MailboxAccount
+            from sqlalchemy import or_
+            query = query.join(MailboxAccount, self.model.mailbox_account_id == MailboxAccount.id).filter(
+                or_(MailboxAccount.user_id == user_id, MailboxAccount.user_id == None)
+            )
+
         if status == 'active':
             query = query.filter(self.model.is_active == True)
         elif status == 'disabled':

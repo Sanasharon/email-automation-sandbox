@@ -65,11 +65,11 @@ def get_gmail_credentials() -> Credentials:
             creds = None
 
     if not creds or not creds.valid:
-        logger.info("Initiating browser OAuth flow...")
+        logger.info("Initiating browser OAuth flow with Account Chooser...")
         flow = InstalledAppFlow.from_client_secrets_file(
             secrets_file, [required_scope]
         )
-        creds = flow.run_local_server(port=0)
+        creds = flow.run_local_server(port=0, prompt='consent select_account')
         
         with open(token_file, "w") as f:
             f.write(creds.to_json())
@@ -83,3 +83,13 @@ def create_gmail_service(creds: Credentials):
 def get_authenticated_gmail_profile(service) -> dict:
     """Fetches the authenticated user's Gmail profile."""
     return service.users().getProfile(userId='me').execute()
+
+def clear_cached_credentials():
+    """Deletes cached OAuth token file to force Account Chooser on next login."""
+    token_file = settings.google_token_file
+    if os.path.exists(token_file):
+        try:
+            os.remove(token_file)
+            logger.info(f"Cleared cached token file at {token_file}")
+        except Exception as e:
+            logger.error(f"Failed to remove token file: {e}")

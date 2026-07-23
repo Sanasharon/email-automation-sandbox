@@ -20,13 +20,14 @@ def get_workflows(
     search: str = Query("", description="Search by workflow name"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
     service: WorkflowService = Depends(get_workflow_service)
 ):
-    """List workflows with pagination, status filtering, and search."""
+    """List workflows with pagination, status filtering, search, and user scoping."""
     status_filter = status if status in ["active", "disabled"] else None
     search_filter = search if search else None
     
-    result = service.get_workflows(status=status_filter, search=search_filter, page=page, page_size=page_size)
+    result = service.get_workflows(status=status_filter, search=search_filter, page=page, page_size=page_size, user_id=current_user["id"])
     return success_response(data=result, request_id=request.state.request_id)
 
 @router.get("/categories", response_model=APIResponse[list[dict]])

@@ -108,50 +108,56 @@ export const api = {
   },
 
   getWorkflows: async ({ status = 'all', search = '', page = 1, pageSize = 10 }) => {
-    const response = await axiosClient.get('/workflows', {
-      params: { search, page, page_size: pageSize }
-    });
-    
-    const rawData = validateArray(response.data || response, 'Workflows');
-    
-    // Map backend response -> UI Expected Format
-    const mappedData = rawData.map(w => {
-      let category = "";
-      if (w.trigger_conditions_json?.rules?.length > 0) {
-         category = w.trigger_conditions_json.rules[0].value;
-         if (category === 'any') category = '';
-      }
-      let team = "";
-      if (w.description && w.description.startsWith("Target Team: ")) {
-         team = w.description.replace("Target Team: ", "");
-      }
+    try {
+      const response = await axiosClient.get('/workflows', {
+        params: { search, page, page_size: pageSize }
+      });
+      
+      const rawData = Array.isArray(response.data) ? response.data : (Array.isArray(response) ? response : []);
+      
+      // Map backend response -> UI Expected Format
+      const mappedData = rawData.map(w => {
+        let category = "";
+        if (w.trigger_conditions_json?.rules?.length > 0) {
+           category = w.trigger_conditions_json.rules[0].value;
+           if (category === 'any') category = '';
+        }
+        let team = "";
+        if (w.description && w.description.startsWith("Target Team: ")) {
+           team = w.description.replace("Target Team: ", "");
+        }
+        return {
+          ...w,
+          status: w.is_active ? 'active' : 'disabled',
+          trigger_type: 'webhook', // Fallback for UI visualization
+          last_run: w.updated_at,
+          category_filter: category,
+          destination_team: team
+        };
+      });
+      
       return {
-        ...w,
-        status: w.is_active ? 'active' : 'disabled',
-        trigger_type: 'webhook', // Fallback for UI visualization
-        last_run: w.updated_at,
-        category_filter: category,
-        destination_team: team
+        data: mappedData,
+        total: response.meta?.total_items || mappedData.length,
+        page: response.meta?.current_page || page,
+        page_size: response.meta?.page_size || pageSize
       };
-    });
-    
-    return {
-      data: mappedData,
-      total: response.meta?.total_items || 0,
-      page: response.meta?.current_page || page,
-      page_size: response.meta?.page_size || pageSize
-    };
+    } catch (e) {
+      console.error('Failed to fetch workflows:', e);
+      return { data: [], total: 0, page, page_size: pageSize };
+    }
   },
   
   createWorkflow: async (workflow) => {
-    // Fetch a valid mailbox_account_id from an existing workflow
-    const existing = await api.getWorkflows({ pageSize: 1 });
-    let mailboxId = "00000000-0000-0000-0000-000000000000";
-    if (existing && existing.data && existing.data.length > 0) {
-      mailboxId = existing.data[0].mailbox_account_id;
-    } else {
-      // Fallback to the known UUID from our test db
-      mailboxId = "276681d7-7ca4-47aa-851b-fd046ffc1ef4"; 
+    let mailboxId = workflow.mailbox_account_id;
+    if (!mailboxId) {
+      const mailboxes = await api.getMailboxes();
+      if (mailboxes && mailboxes.length > 0) {
+        mailboxId = mailboxes[0].id;
+      }
+    }
+    if (!mailboxId) {
+      throw new Error("No connected Gmail account found. Please connect your Gmail account in Settings before creating workflows.");
     }
     
     // Map UI form fields -> Backend schema fields
@@ -229,12 +235,12 @@ export const api = {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const responseData = response.data || response;
-      const rawData = validateArray(responseData.data, 'Emails');
+      const rawData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : []);
       const normalizedData = rawData.map(normalizeEmail);
       return { data: normalizedData, total: responseData.total || rawData.length, page, page_size: pageSize };
     } catch (e) {
       console.error('Failed to fetch emails:', e);
-      throw e;
+      return { data: [], total: 0, page, page_size: pageSize };
     }
   },
 
@@ -321,8 +327,55 @@ export const api = {
 
   getMailboxes: async () => {
     const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.get(`${baseHost}/dashboard/mailboxes`);
+    const response = await axios.get(`${baseHost}/mailboxes/`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data || response;
+  },
+
+  connectMailbox: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.post(`${baseHost}/mailboxes/connect`, {}, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
     return response.data;
+  },
+
+  syncMailbox: async (mailboxId) => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/sync`, {}, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data;
+  },
+
+  disconnectMailbox: async (mailboxId) => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/disconnect`, {}, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data;
+  },
+
+  reconnectMailbox: async (mailboxId) => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/reconnect`, {}, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data;
+  },
+
+  switchMailboxAccount: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.post(`${baseHost}/mailboxes/switch-account`, {}, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data;
+  },
+
+  getSystemStatus: async () => {
+    const response = await axiosClient.get('/system/status');
+    return response || {};
   },
 
   getCurrentTask: async () => {

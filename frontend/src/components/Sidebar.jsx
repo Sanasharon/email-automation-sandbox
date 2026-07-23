@@ -2,12 +2,20 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Menu, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+  
+  const [mailboxes, setMailboxes] = useState([]);
+  useEffect(() => {
+    api.getMailboxes().then(res => setMailboxes(Array.isArray(res) ? res : [])).catch(() => setMailboxes([]));
+  }, []);
+  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
+  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -85,6 +93,12 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
               <span className="text-white">SERVIO</span>
             </div>
             <span className="text-[12px] text-surface-variant tracking-wide block mt-1">AI Email Automation</span>
+            <div className="mt-3 flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-amber-500'}`}></span>
+              <span className="text-[11px] font-medium text-surface-variant">
+                {isConnected ? 'Gmail Synced' : 'Gmail Disconnected'}
+              </span>
+            </div>
           </div>
           <nav className="space-y-1">
             <div className="px-4 py-2 text-xs font-bold text-surface-variant uppercase tracking-wider">Operations</div>

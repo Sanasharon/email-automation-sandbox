@@ -1,15 +1,59 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useLiveData } from '../../hooks/useLiveData';
 import { api } from '../../api/client';
 import { KpiCard } from '../../components/KpiCard';
 import { ActivityTimeline } from '../../components/ActivityTimeline';
 import { LoadingSkeleton } from '../../components/LoadingSkeleton';
+import { Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 export const DashboardOverview = () => {
+  const navigate = useNavigate();
   const { data: summary, loading: summaryLoading, error: summaryError } = useLiveData(api.getDashboardSummary);
   const { data: recentActivity, loading: activityLoading } = useLiveData(api.getRecentActivity);
+  
+  const [mailboxes, setMailboxes] = useState([]);
+  const [connectionLoading, setConnectionLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMailboxes = () => {
+      api.getMailboxes()
+        .then(res => setMailboxes(Array.isArray(res) ? res : []))
+        .catch(() => setMailboxes([]))
+        .finally(() => setConnectionLoading(false));
+    };
+
+    fetchMailboxes();
+    const interval = setInterval(fetchMailboxes, 15000); // 15s auto-refresh
+    return () => clearInterval(interval);
+  }, []);
+
+  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
+  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Connection State Onboarding Banner */}
+      {!connectionLoading && !isConnected && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl p-6 md:p-8 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white backdrop-blur-sm">
+              <Mail className="w-3.5 h-3.5 mr-1.5" /> Setup Required
+            </div>
+            <h2 className="text-xl md:text-2xl font-bold">Connect your Gmail Account to start automation</h2>
+            <p className="text-sm text-blue-100 leading-relaxed">
+              Workflows, automated categorization, and email monitoring are currently paused. Connect your Google OAuth account to begin parsing emails in real time.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/settings')}
+            className="bg-white text-blue-700 hover:bg-blue-50 font-bold px-6 py-3 rounded-xl text-sm transition-all shadow-sm flex items-center gap-2 whitespace-nowrap"
+          >
+            Connect Gmail Account <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {summaryError && (
         <div className="bg-error-container text-on-error-container p-4 rounded-md text-body-md">
           Failed to load summary data. Please try again.

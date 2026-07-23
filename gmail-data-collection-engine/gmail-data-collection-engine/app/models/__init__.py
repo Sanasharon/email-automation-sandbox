@@ -7,6 +7,7 @@ from app.models.sync_error import SyncError
 from app.models.user import User, UserRole
 from app.models.workflow import Workflow, WorkflowExecution
 from app.models.system_settings import SystemSetting
+from app.models.template import Template
 
 __all__ = [
     "MailboxAccount",
@@ -20,4 +21,5 @@ __all__ = [
     "Workflow",
     "WorkflowExecution",
     "SystemSetting",
+    "Template",
 ]
