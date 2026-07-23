@@ -6,9 +6,9 @@ class GmailProvider(BaseCommunicationProvider):
         self.creds = None
         self.service = None
 
-    def authenticate(self):
+    def authenticate(self, interactive: bool = True):
         """Authenticates via Desktop OAuth and initializes the Gmail service."""
-        self.creds = get_gmail_credentials()
+        self.creds = get_gmail_credentials(interactive=interactive)
         self.service = create_gmail_service(self.creds)
 
     def get_account_profile(self):
@@ -54,8 +54,7 @@ class GmailProvider(BaseCommunicationProvider):
         
         req = self.service.users().history().list(
             userId='me',
-            startHistoryId=start_history_id,
-            historyTypes=["messageAdded"]
+            startHistoryId=start_history_id
         )
         
         while req is not None:
@@ -68,9 +67,24 @@ class GmailProvider(BaseCommunicationProvider):
                 
             history_records = res.get('history', [])
             for record in history_records:
-                messages_added = record.get('messagesAdded', [])
-                for msg_added in messages_added:
+                # 1. Check messagesAdded
+                for msg_added in record.get('messagesAdded', []):
                     msg_id = msg_added.get('message', {}).get('id')
+                    if msg_id:
+                        message_ids.add(msg_id)
+                # 2. Check direct messages in record
+                for msg in record.get('messages', []):
+                    msg_id = msg.get('id')
+                    if msg_id:
+                        message_ids.add(msg_id)
+                # 3. Check labelsAdded (e.g. INBOX label added)
+                for lbl_added in record.get('labelsAdded', []):
+                    msg_id = lbl_added.get('message', {}).get('id')
+                    if msg_id:
+                        message_ids.add(msg_id)
+                # 4. Check labelsRemoved (e.g. DRAFT or UNREAD label removed)
+                for lbl_rem in record.get('labelsRemoved', []):
+                    msg_id = lbl_rem.get('message', {}).get('id')
                     if msg_id:
                         message_ids.add(msg_id)
                         

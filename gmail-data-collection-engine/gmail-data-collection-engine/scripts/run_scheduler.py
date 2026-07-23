@@ -25,9 +25,8 @@ def poll_mailboxes():
         for account in mailboxes:
             provider = GmailProvider()
             try:
-                # In a real multi-tenant app, credentials would be loaded per-account.
-                # Here we are relying on local desktop oauth file.
-                provider.authenticate()
+                # Use non-interactive OAuth check in background daemon
+                provider.authenticate(interactive=False)
                 orchestrator = SyncOrchestrator(db, provider)
                 orchestrator.run_sync(str(account.id), mode="incremental")
             except Exception as e:

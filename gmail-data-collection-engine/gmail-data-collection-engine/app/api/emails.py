@@ -56,7 +56,7 @@ def list_emails(
             Email.retention_category, Email.has_attachments, 
             Email.provider_message_id, Email.provider_thread_id
         )
-    ).order_by(Email.received_at.desc().nulls_last()).offset(skip).limit(limit).all()
+    ).order_by(Email.created_at.desc(), Email.received_at.desc().nulls_last()).offset(skip).limit(limit).all()
     
     email_ids = [e.id for e in emails]
     

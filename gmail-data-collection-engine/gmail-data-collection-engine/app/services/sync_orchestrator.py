@@ -58,7 +58,7 @@ class SyncOrchestrator:
                 sync_locked_at = NOW(), 
                 sync_lock_expires_at = NOW() + INTERVAL '{ttl_minutes} minutes'
             WHERE id = :id 
-              AND (sync_status = 'connected' OR sync_lock_expires_at < NOW())
+              AND (sync_status IN ('connected', 'idle', 'active') OR sync_lock_expires_at < NOW())
         """)
         
         res = self.db.execute(lock_query, {"token": lock_token, "id": account_id})
@@ -129,6 +129,17 @@ class SyncOrchestrator:
                         incremental_message_ids_found = len(msg_ids_list)
                         msg_ids_to_process = msg_ids_list[:max_emails] if max_emails else msg_ids_list
                         logger.info(f"[SYNC] Incremental: {incremental_message_ids_found} new message IDs found, {history_pages_processed} history pages processed.")
+                        
+                        # --- Safety Catch-Up Check for Downtime Gaps ---
+                        if len(msg_ids_to_process) == 0 and account.last_sync_at:
+                            downtime_seconds = (datetime.now(timezone.utc) - account.last_sync_at).total_seconds()
+                            if downtime_seconds > 300: # Over 5 minutes of downtime/gap
+                                epoch_ts = int(account.last_sync_at.timestamp())
+                                logger.info(f"[SYNC] Downtime gap detected ({round(downtime_seconds)}s). Running reconciliation query 'after:{epoch_ts}'...")
+                                query_ids = list(self.provider.fetch_message_ids(query=f"after:{epoch_ts}", max_results=max_emails))
+                                if query_ids:
+                                    logger.info(f"[SYNC] Reconciliation query recovered {len(query_ids)} message ID(s) missed during downtime.")
+                                    msg_ids_to_process = query_ids
                     except HttpError as e:
                         if e.resp.status == 404:
                             logger.warning("[SYNC] HistoryId expired (404). Falling back to full sync.")
@@ -418,6 +429,18 @@ class SyncOrchestrator:
             logger.info(f"  History Cursor     : {sync_cursor_before} → {sync_cursor_after}")
             logger.info(f"  Fallback Full Sync : {fallback_full_sync_used}")
             logger.info("=" * 60)
+
+            # --- Broadcast Real-Time SSE Event ---
+            try:
+                from app.api.v1.events import broadcast_event
+                broadcast_event("sync_completed", {
+                    "account_id": account_id,
+                    "emails_inserted": emails_inserted,
+                    "status": status,
+                    "mode": mode
+                })
+            except Exception as sse_err:
+                logger.warning(f"[SSE] Non-fatal error broadcasting sync event: {sse_err}")
 
             # --- Metrics validation ---
             expected_processed = emails_inserted + duplicates_skipped

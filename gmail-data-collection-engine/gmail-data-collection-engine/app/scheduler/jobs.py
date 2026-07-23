@@ -10,6 +10,8 @@ from app.providers.gmail_provider import GmailProvider
 from app.services.sync_orchestrator import SyncOrchestrator
 from app.services.workflow_execution_service import WorkflowExecutionService
 
+from app.auth.gmail_oauth import NonInteractiveAuthRequired
+
 logger = logging.getLogger("scheduler_jobs")
 
 
@@ -28,9 +30,13 @@ def poll_mailboxes_job():
         for account in mailboxes:
             provider = GmailProvider()
             try:
-                provider.authenticate()
+                provider.authenticate(interactive=False)
                 orchestrator = SyncOrchestrator(db, provider)
                 orchestrator.run_sync(str(account.id), mode="incremental")
+            except NonInteractiveAuthRequired:
+                logger.warning(f"[SCHEDULER_JOB] Mailbox {account.id} requires OAuth re-authentication. Updating status to 'auth_error'.")
+                account.sync_status = 'auth_error'
+                db.commit()
             except Exception as e:
                 logger.error(f"[SCHEDULER_JOB] Failed to sync mailbox {account.id}: {e}")
 

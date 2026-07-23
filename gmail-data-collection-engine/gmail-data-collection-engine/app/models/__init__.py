@@ -8,6 +8,8 @@ from app.models.user import User, UserRole
 from app.models.workflow import Workflow, WorkflowExecution
 from app.models.system_settings import SystemSetting
 from app.models.template import Template
+from app.models.prompt_template import PromptTemplate
+from app.models.ai_approval import AIApproval
 
 __all__ = [
     "MailboxAccount",
@@ -22,4 +24,6 @@ __all__ = [
     "WorkflowExecution",
     "SystemSetting",
     "Template",
+    "PromptTemplate",
+    "AIApproval",
 ]

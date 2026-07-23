@@ -6,6 +6,9 @@ from app.api.v1.automation import router as automation_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.system_monitoring import router as system_monitoring_router
+from app.api.v1.events import router as events_router
+from app.api.v1.prompt_templates import router as prompt_templates_router
+from app.api.v1.ai_approvals import router as ai_approvals_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(dashboard_router)
@@ -15,3 +18,6 @@ api_v1_router.include_router(automation_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(system_monitoring_router)
+api_v1_router.include_router(events_router)
+api_v1_router.include_router(prompt_templates_router)
+api_v1_router.include_router(ai_approvals_router)

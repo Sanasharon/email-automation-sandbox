@@ -11,6 +11,7 @@ import Roles from './pages/Roles';
 import Templates from './pages/Templates';
 import SystemConfig from './pages/SystemConfig';
 import Monitoring from './pages/Monitoring';
+import ApprovalQueue from './pages/ApprovalQueue';
 import { AuthProvider } from './context/AuthContext';
 import { RefreshProvider } from './context/RefreshContext';
 import { ProtectedRoute } from './context/ProtectedRoute';
@@ -34,6 +35,7 @@ function App() {
               <Route path="workflows" element={<ErrorBoundary><WorkflowControl /></ErrorBoundary>} />
               <Route path="monitoring" element={<ErrorBoundary><EmailMonitoring /></ErrorBoundary>} />
               <Route path="automation" element={<ErrorBoundary><AutomationActivity /></ErrorBoundary>} />
+              <Route path="approvals" element={<ErrorBoundary><ApprovalQueue /></ErrorBoundary>} />
               
               {/* Administration Routes */}
               <Route path="users" element={<ErrorBoundary><Users /></ErrorBoundary>} />

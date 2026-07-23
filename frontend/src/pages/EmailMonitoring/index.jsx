@@ -76,12 +76,27 @@ export const EmailMonitoring = () => {
     { header: 'Subject', accessor: 'subject', render: (row) => <div className="max-w-[200px] truncate" title={row.subject}>{row.subject}</div> },
     { header: 'Category', accessor: 'category', render: (row) => <span className="text-on-surface-variant bg-surface-container px-2 py-1 rounded text-xs">{row.category}</span> },
     { header: 'Workflow', accessor: 'workflow_name', render: (row) => <div className="max-w-[150px] truncate text-primary font-medium" title={row.workflow_name}>{row.workflow_name}</div> },
-    { header: 'Last Action', accessor: 'last_action', render: (row) => (
-      <div className="flex flex-col">
-        <span className="text-sm truncate max-w-[150px]">{row.last_action}</span>
-        {row.processing_duration > 0 && <span className="text-[10px] text-on-surface-variant">{row.processing_duration.toFixed(2)}s</span>}
-      </div>
-    )},
+    { 
+      header: 'AI Generated', 
+      render: (row) => (
+        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${row.has_ai_draft ? 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 text-gray-500'}`}>
+          {row.has_ai_draft ? 'Yes' : 'No'}
+        </span>
+      )
+    },
+    { 
+      header: 'Approval Status', 
+      render: (row) => {
+        if (!row.approval_status) return <span className="text-gray-400 text-xs">N/A</span>;
+        return (
+          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+            row.approval_status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {row.approval_status === 'approved' ? 'Approved' : 'Pending Review'}
+          </span>
+        );
+      }
+    },
     { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
     { header: 'Sent Time', accessor: 'sent_time', render: (row) => new Date(row.sent_time).toLocaleString() },
     { header: 'Actions', render: (row) => (

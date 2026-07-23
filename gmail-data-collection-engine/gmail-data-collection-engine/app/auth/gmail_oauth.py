@@ -24,10 +24,16 @@ def validate_credential_file(file_path: str):
     if "installed" not in creds_data:
         raise ValueError(f"Invalid credential format in {file_path}. Expected 'installed' key.")
 
-def get_gmail_credentials() -> Credentials:
+class NonInteractiveAuthRequired(Exception):
+    """Raised when background/non-interactive OAuth flow encounters invalid credentials."""
+    pass
+
+
+def get_gmail_credentials(interactive: bool = True) -> Credentials:
     """
     Manages the Desktop OAuth flow.
     Validates scope, handles token reuse and refresh, or initiates a browser flow.
+    If interactive=False, raises NonInteractiveAuthRequired instead of opening a GUI browser.
     """
     token_file = settings.google_token_file
     secrets_file = settings.google_client_secrets_file
@@ -65,6 +71,10 @@ def get_gmail_credentials() -> Credentials:
             creds = None
 
     if not creds or not creds.valid:
+        if not interactive:
+            logger.warning("[AUTH] Non-interactive OAuth check: Credentials missing or invalid. Skipping browser flow.")
+            raise NonInteractiveAuthRequired("OAuth credentials missing or expired. Interactive login required.")
+            
         logger.info("Initiating browser OAuth flow with Account Chooser...")
         flow = InstalledAppFlow.from_client_secrets_file(
             secrets_file, [required_scope]

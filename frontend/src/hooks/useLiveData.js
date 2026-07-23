@@ -114,9 +114,25 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
 
     initialFetch();
 
+    // --- Real-Time Server-Sent Events (SSE) Push Listener ---
+    let eventSource;
+    try {
+      const sseUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'}/events/stream`;
+      eventSource = new EventSource(sseUrl);
+      
+      eventSource.addEventListener('sync_completed', () => {
+        if (mounted) {
+          fetchData(true).catch(() => {});
+        }
+      });
+    } catch (e) {
+      console.warn('[useLiveData] SSE connection fallback:', e);
+    }
+
     return () => {
       mounted = false;
       if (pollTimer) clearInterval(pollTimer);
+      if (eventSource) eventSource.close();
     };
   }, [...dependencies, fetchData, pollingInterval, globalRefreshKey]);
 

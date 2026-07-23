@@ -9,8 +9,8 @@ import { Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 export const DashboardOverview = () => {
   const navigate = useNavigate();
-  const { data: summary, loading: summaryLoading, error: summaryError } = useLiveData(api.getDashboardSummary);
-  const { data: recentActivity, loading: activityLoading } = useLiveData(api.getRecentActivity);
+  const { data: summary, loading: summaryLoading, error: summaryError } = useLiveData(api.getDashboardSummary, 5000);
+  const { data: recentActivity, loading: activityLoading } = useLiveData(api.getRecentActivity, 5000);
   
   const [mailboxes, setMailboxes] = useState([]);
   const [connectionLoading, setConnectionLoading] = useState(true);
@@ -68,7 +68,7 @@ export const DashboardOverview = () => {
           <>
             <KpiCard label="Total Workflows" value={(summary.total_workflows ?? 0).toLocaleString()} />
             <KpiCard label="Active Workflows" value={(summary.active_workflows ?? 0).toLocaleString()} trend={{ value: '4%', direction: 'up' }} status="success" />
-            <KpiCard label="Emails Processed" value={((summary.emails_processed ?? 0) / 1000).toFixed(1) + 'k'} />
+            <KpiCard label="Emails Processed" value={(summary.emails_processed ?? 0) >= 1000 ? ((summary.emails_processed / 1000).toFixed(1) + 'k') : (summary.emails_processed ?? 0).toLocaleString()} />
             <KpiCard label="Failed Executions" value={(summary.failed_executions ?? 0).toLocaleString()} trend={{ value: '8%', direction: 'down' }} status="error" />
             <KpiCard label="Pending Jobs" value={(summary.pending_jobs ?? 0).toLocaleString()} />
             <KpiCard label="System Health" value={`${summary.system_health_percent ?? 0}%`} status="success" />

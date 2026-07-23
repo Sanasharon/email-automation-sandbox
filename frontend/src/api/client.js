@@ -445,5 +445,48 @@ export const api = {
     }
     const response = await axiosClient.get('/notifications');
     return response || [];
+  },
+
+  // ---------------------------------------------------------
+  // Sprint 5: Prompt Templates & AI Approvals
+  // ---------------------------------------------------------
+  getPromptTemplates: async () => {
+    try {
+      const response = await axiosClient.get('/prompt-templates');
+      return response || [];
+    } catch (e) {
+      console.error('Failed to fetch prompt templates:', e);
+      return [];
+    }
+  },
+
+  createPromptTemplate: async (payload) => {
+    const response = await axiosClient.post('/prompt-templates', payload);
+    return response;
+  },
+
+  deletePromptTemplate: async (id) => {
+    const response = await axiosClient.delete(`/prompt-templates/${id}`);
+    return response;
+  },
+
+  getPendingApprovals: async () => {
+    try {
+      const response = await axiosClient.get('/ai-approvals');
+      return response || [];
+    } catch (e) {
+      console.error('Failed to fetch AI pending approvals:', e);
+      return [];
+    }
+  },
+
+  approveAIDraft: async (id, editedText) => {
+    const response = await axiosClient.post(`/ai-approvals/${id}/approve`, null, { params: { edited_text: editedText } });
+    return response;
+  },
+
+  rejectAIDraft: async (id) => {
+    const response = await axiosClient.post(`/ai-approvals/${id}/reject`);
+    return response;
   }
 };

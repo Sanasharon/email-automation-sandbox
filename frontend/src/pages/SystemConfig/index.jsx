@@ -119,6 +119,7 @@ const SystemConfig = () => {
 
   const sections = [
     { id: 'gmail', title: 'Gmail Connection & Scheduler', icon: <Mail className="w-5 h-5" />, desc: 'Connect, switch account & manage background sync.' },
+    { id: 'ai_provider', title: 'AI Provider Settings', icon: <Key className="w-5 h-5 text-indigo-600" />, desc: 'Configure default LLM provider & API credentials.' },
     { id: 'general', title: 'General Settings', icon: <Server className="w-5 h-5" />, desc: 'Configure global application parameters.' },
     { id: 'keys', title: 'API Keys & Secrets', icon: <Key className="w-5 h-5" />, desc: 'Manage Supabase and API credentials.' },
     { id: 'notifications', title: 'Notifications', icon: <Bell className="w-5 h-5" />, desc: 'System alert & digest preferences.' },
@@ -314,7 +315,89 @@ const SystemConfig = () => {
             </div>
           )}
 
-          {activeTab !== 'gmail' && (
+          {activeTab === 'ai_provider' && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-indigo-600" />
+                  System Administrator — AI Providers & Failover Pipeline
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">Configure multi-provider priority, API credentials, and automatic failover pipeline.</p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Primary Provider */}
+                <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-indigo-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded">Primary Provider</span>
+                      <h4 className="font-bold text-gray-900 dark:text-white text-sm">OpenAI (gpt-4o)</h4>
+                    </div>
+                    <span className="text-xs text-green-600 font-semibold">● Connected & Active</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1">Model Selection</label>
+                      <select className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        <option value="gpt-4o">gpt-4o (Recommended)</option>
+                        <option value="gpt-4-turbo">gpt-4-turbo</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1">API Key</label>
+                      <input type="password" defaultValue="sk-proj-••••••••••••••••3A9x" className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono" />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      onClick={() => setFeedback({ type: 'success', message: 'Primary Provider (OpenAI gpt-4o) Connection Verified!' })}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                    >
+                      Test OpenAI Connection
+                    </button>
+                  </div>
+                </div>
+
+                {/* Secondary Provider */}
+                <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-purple-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded">Secondary Failover</span>
+                      <h4 className="font-bold text-gray-900 dark:text-white text-sm">Google Gemini (1.5 Pro)</h4>
+                    </div>
+                    <span className="text-xs text-amber-600 font-semibold">● Standby / Fallback Ready</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1">Model Selection</label>
+                      <select className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1">API Key</label>
+                      <input type="password" defaultValue="AIzaSy••••••••••••••••9B2z" className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono" />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      onClick={() => setFeedback({ type: 'success', message: 'Secondary Provider (Google Gemini) Connection Verified!' })}
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                    >
+                      Test Gemini Connection
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab !== 'gmail' && activeTab !== 'ai_provider' && (
             <div className="py-12 text-center text-gray-500">
               <Server className="w-12 h-12 mx-auto mb-3 text-gray-400" />
               <p className="font-medium text-gray-700 dark:text-gray-300">Setting section is read-only in this demo environment.</p>

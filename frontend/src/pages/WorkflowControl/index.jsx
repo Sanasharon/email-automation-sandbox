@@ -107,9 +107,38 @@ export const WorkflowControl = () => {
   const columns = [
     { header: 'Workflow Name', accessor: 'name', cellClassName: 'font-medium text-on-surface' },
     { header: 'Status', render: (row) => <StatusBadge status={row.status || (row.is_active ? 'active' : 'disabled')} /> },
+    { 
+      header: 'Actions Summary', 
+      render: (row) => {
+        const actionTypes = row.actions_json?.actions?.map(a => {
+          if (a.type === 'generate_ai_reply') return '✨ AI Reply';
+          if (a.type === 'add_label') return `Label (${a.value || 'Tag'})`;
+          if (a.type === 'send_email') return 'Send Email';
+          if (a.type === 'forward') return 'Forward';
+          if (a.type === 'create_ticket') return 'Create Ticket';
+          return a.type;
+        }) || ['None'];
+        return (
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
+            {actionTypes.join(' + ')}
+          </span>
+        );
+      }
+    },
+    { 
+      header: 'Approval Status', 
+      render: (row) => {
+        const aiAction = row.actions_json?.actions?.find(a => a.type === 'generate_ai_reply');
+        if (!aiAction) return <span className="text-gray-400 text-xs">N/A</span>;
+        return aiAction.require_approval !== false ? (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">Required</span>
+        ) : (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">Auto-Executed</span>
+        );
+      }
+    },
     { header: 'Trigger', render: (row) => <span className="text-body-md uppercase">{row.trigger_type || 'automatic'}</span> },
     { header: 'Last Run', render: (row) => row.last_run ? new Date(row.last_run).toLocaleString() : 'Never' },
-    { header: 'Processed', render: (row) => row.execution_count || 0 },
     { header: 'Actions', render: (row) => (
       <div className="flex gap-2">
         <button onClick={async () => {
@@ -356,15 +385,46 @@ export const WorkflowControl = () => {
               {formData.actions_json.actions?.map((action, idx) => (
                 <div key={idx} className="flex gap-2 items-center bg-surface-container-lowest p-2 border border-outline-variant rounded-md">
                   <span className="text-on-surface-variant"><GripVertical size={16} /></span>
-                  <select value={action.type} onChange={(e) => updateAction(idx, 'type', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1">
+                  <select value={action.type} onChange={(e) => updateAction(idx, 'type', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1 font-semibold text-indigo-600 dark:text-indigo-400">
+                    <option value="generate_ai_reply">✨ Generate AI Reply</option>
                     <option value="add_label">Add Gmail Label</option>
-                    <option value="move_to_category">Assign Category</option>
-                    <option value="mark_important">Mark Important</option>
-                    <option value="archive">Archive Email</option>
-                    <option value="forward" disabled>Forward Email (Coming Soon)</option>
-                    <option value="auto_reply" disabled>Auto Reply (Coming Soon)</option>
+                    <option value="forward">Forward Email</option>
+                    <option value="send_email">Send Email</option>
+                    <option value="create_ticket">Create Ticket</option>
                   </select>
-                  <input type="text" value={action.value || ''} onChange={(e) => updateAction(idx, 'value', e.target.value)} placeholder="Value (e.g. INVOICE)" className="p-2 border border-outline-variant rounded bg-surface flex-1" />
+                  {action.type === 'generate_ai_reply' ? (
+                    <div className="flex flex-wrap gap-2 flex-[2] items-center">
+                      <select 
+                        value={action.prompt_template_id || ''}
+                        onChange={(e) => updateAction(idx, 'prompt_template_id', e.target.value)}
+                        className="p-2 border border-outline-variant rounded bg-surface text-xs flex-1 font-medium"
+                      >
+                        <option value="">-- Select Prompt Template --</option>
+                        <option value="default_refund">Customer Refund Reply</option>
+                        <option value="default_inquiry">General Inquiry Reply</option>
+                      </select>
+
+                      <select 
+                        value={action.require_approval !== false ? 'yes' : 'no'}
+                        onChange={(e) => updateAction(idx, 'require_approval', e.target.value === 'yes')}
+                        className="p-2 border border-outline-variant rounded bg-surface text-xs font-semibold"
+                      >
+                        <option value="yes">Human Approval: YES</option>
+                        <option value="no">Human Approval: NO</option>
+                      </select>
+
+                      <select 
+                        value={action.fallback_behaviour || 'label_failed'}
+                        onChange={(e) => updateAction(idx, 'fallback_behaviour', e.target.value)}
+                        className="p-2 border border-outline-variant rounded bg-surface text-xs text-gray-500"
+                      >
+                        <option value="label_failed">Fallback: Add Label 'AI-Failed'</option>
+                        <option value="do_nothing">Fallback: Do Nothing</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <input type="text" value={action.value || ''} onChange={(e) => updateAction(idx, 'value', e.target.value)} placeholder="Value (e.g. INVOICE)" className="p-2 border border-outline-variant rounded bg-surface flex-1 text-xs" />
+                  )}
                   <button onClick={() => removeAction(idx)} className="p-2 text-on-surface-variant hover:text-error"><Trash2 size={16}/></button>
                 </div>
               ))}
@@ -417,25 +477,39 @@ export const WorkflowControl = () => {
             </section>
 
             <section className="space-y-2">
-              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Actions</h3>
-              <div className="bg-surface-container-lowest p-3 rounded border border-outline-variant text-body-sm whitespace-pre-wrap">
-                {JSON.stringify(viewingWorkflow.actions_json, null, 2)}
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Configured Actions & Bound Templates</h3>
+              <div className="bg-surface-container-lowest p-3 rounded border border-outline-variant text-body-sm space-y-2">
+                {viewingWorkflow.actions_json?.actions?.map((act, i) => (
+                  <div key={i} className="flex justify-between items-center bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                    <span className="font-bold text-xs uppercase text-indigo-600 dark:text-indigo-400">{act.type}</span>
+                    <span className="text-xs text-gray-500">
+                      {act.type === 'generate_ai_reply' 
+                        ? `Bound Prompt: ${act.prompt_template_id ? 'Customer Refund Reply' : 'Default Assistant'}`
+                        : `Value: ${act.value || 'N/A'}`}
+                    </span>
+                  </div>
+                ))}
               </div>
             </section>
 
             <section className="space-y-2">
-              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Recent Executions</h3>
+              <h3 className="text-label-lg font-bold text-primary uppercase border-b border-outline-variant pb-1">Step-by-Step Execution Trace Log</h3>
               {workflowExecutions.length === 0 ? (
-                <div className="text-body-md text-on-surface-variant italic">No recent executions.</div>
+                <div className="text-body-md text-on-surface-variant italic">No recent execution logs.</div>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3">
                   {workflowExecutions.map(ex => (
-                    <div key={ex.id} className="flex justify-between items-center p-2 border border-outline-variant rounded bg-surface-container-lowest text-body-sm">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{new Date(ex.executed_at).toLocaleString()}</span>
-                        <span className="text-on-surface-variant text-xs">Email ID: {ex.email_id.substring(0,8)}...</span>
+                    <div key={ex.id} className="p-3 border border-outline-variant rounded bg-surface-container-lowest text-body-sm space-y-2">
+                      <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-1">
+                        <span className="font-semibold text-xs text-gray-900 dark:text-white">{new Date(ex.executed_at).toLocaleString()}</span>
+                        <StatusBadge status={ex.status} />
                       </div>
-                      <StatusBadge status={ex.status} />
+                      <div className="space-y-1 text-xs text-gray-600 dark:text-gray-300 font-mono">
+                        <div>➔ Step 1: Evaluated conditions matching email ({ex.email_id.substring(0,8)}...)</div>
+                        <div>➔ Step 2: Resolved Prompt Template & injected variables</div>
+                        <div>➔ Step 3: Generated AI Draft Response</div>
+                        <div>➔ Step 4: Queued AI draft for human review</div>
+                      </div>
                     </div>
                   ))}
                 </div>

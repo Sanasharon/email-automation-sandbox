@@ -1,6 +1,6 @@
 import logging
 import traceback
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -66,7 +66,7 @@ class WorkflowExecutionService(BaseService):
         logger.info(f"[WORKFLOW] Email {email.id} matched workflow '{workflow.name}'")
         
         # Execute Actions
-        action_logs = self._execute_actions(email, workflow.actions_json)
+        action_logs = self._execute_actions(email, workflow.actions_json, workflow_id=str(workflow.id))
         
         # Save Execution Audit Log
         exec_create = WorkflowExecutionCreate(
@@ -156,7 +156,7 @@ class WorkflowExecutionService(BaseService):
     # ---------------------------------------------------------
     # Actions Evaluator (Step 4)
     # ---------------------------------------------------------
-    def _execute_actions(self, email: Email, actions: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _execute_actions(self, email: Email, actions: Dict[str, Any], workflow_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Executes safe, predefined actions. No external API calls.
         """
@@ -196,6 +196,47 @@ class WorkflowExecutionService(BaseService):
                     logs.append({"action": "move_to_category", "result": f"Category set to '{a_val}'"})
                 else:
                     logs.append({"action": "move_to_category", "result": "Failed: missing category value"})
+
+            elif a_type == "generate_ai_reply":
+                try:
+                    from app.services.ai_service import AIService
+                    from app.models.prompt_template import PromptTemplate
+                    from app.models.ai_approval import AIApproval
+                    
+                    ai_service = AIService()
+                    prompt_template_id = action.get("prompt_template_id")
+                    require_approval = action.get("require_approval", True)
+                    
+                    prompt_str = "Draft a polite and helpful response to the following customer email:\nSubject: {{email_subject}}\nFrom: {{email_sender}}\n\n{{email_body}}"
+                    if prompt_template_id:
+                        pt = self.db.query(PromptTemplate).get(prompt_template_id)
+                        if pt and pt.prompt_content:
+                            prompt_str = pt.prompt_content
+                            
+                    context = {
+                        "email_sender": email.sender_email or "",
+                        "email_subject": email.subject or "",
+                        "email_body": email.body_text or email.snippet or ""
+                    }
+                    rendered_prompt = ai_service.render_prompt(prompt_str, context)
+                    generated_reply = ai_service.generate_reply(rendered_prompt)
+                    
+                    if require_approval:
+                        approval = AIApproval(
+                            workflow_id=workflow_id,
+                            email_id=email.id,
+                            prompt_template_id=prompt_template_id,
+                            generated_content=generated_reply,
+                            status="pending_review"
+                        )
+                        self.db.add(approval)
+                        self.db.flush()
+                        logs.append({"action": "generate_ai_reply", "result": f"Generated AI Draft queued for approval (ID: {approval.id})"})
+                    else:
+                        logs.append({"action": "generate_ai_reply", "result": f"Generated AI Draft (Auto-send disabled without review)"})
+                except Exception as ai_err:
+                    logger.error(f"[WORKFLOW] Failed AI reply action: {ai_err}")
+                    logs.append({"action": "generate_ai_reply", "result": f"Failed: {ai_err}"})
 
             elif a_type == "log_execution":
                 logs.append({"action": "log_execution", "result": a_val or "Logged via Workflow"})
