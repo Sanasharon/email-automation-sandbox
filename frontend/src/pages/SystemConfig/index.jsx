@@ -1,36 +1,89 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Shield, Server, Bell, Key, Mail, RefreshCw, CheckCircle2, AlertTriangle, Power, Link2, UserCheck, Activity, Clock } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Server, Bell, Key, Mail, RefreshCw, CheckCircle2, AlertTriangle, Power, Link2, UserCheck, Activity, Clock, Plus, Trash2, Save, TestTube, Eye, EyeOff, Copy, RotateCcw, Zap, ChevronDown, X, AlertCircle, CopyCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useMailbox } from '../../context/MailboxContext';
 import { api } from '../../api/client';
+
+const PROVIDER_MODELS = {
+  openai: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3-mini'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+  claude: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+  ollama: ['llama3.1', 'mistral', 'codellama', 'phi3'],
+  openai_compatible: [],
+};
+
+const PROVIDER_DEFAULTS = {
+  openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+  gemini: { base_url: '', model: 'gemini-2.5-pro' },
+  claude: { base_url: '', model: 'claude-sonnet-4-20250514' },
+  ollama: { base_url: 'http://localhost:11434', model: 'llama3.1' },
+  openai_compatible: { base_url: '', model: '' },
+};
 
 const SystemConfig = () => {
   const { user } = useAuth();
+  const { mailboxes, activeMailbox, isConnected, isSyncing, connectMailbox, disconnectMailbox, reconnectMailbox, syncMailbox } = useMailbox();
   const [activeTab, setActiveTab] = useState('gmail');
-  const [mailboxes, setMailboxes] = useState([]);
   const [systemStatus, setSystemStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  // AI Providers state
+  const [aiProviders, setAiProviders] = useState([]);
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [editingProvider, setEditingProvider] = useState(null);
+  const [providerForm, setProviderForm] = useState(getDefaultProviderForm());
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [testResults, setTestResults] = useState({});
+
+  // Disconnect modal state
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [disconnectDeleteData, setDisconnectDeleteData] = useState(false);
+
+  function getDefaultProviderForm() {
+    return {
+      name: '',
+      provider_type: 'openai',
+      model: 'gpt-4.1',
+      api_key: '',
+      base_url: 'https://api.openai.com/v1',
+      is_primary: false,
+      priority: 0,
+      max_tokens: 4000,
+      temperature: 0.7,
+      timeout: 30,
+      retry_count: 3,
+      is_enabled: true,
+      allow_fallback: true,
+      fallback_action: 'next_priority',
+    };
+  }
+
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 15000); // 15s auto-refresh
+    fetchSystemStatus();
+    fetchAIProviders();
+    const interval = setInterval(fetchSystemStatus, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchData = async () => {
+  const fetchSystemStatus = async () => {
     try {
-      setLoading(true);
-      const [mbData, sysData] = await Promise.all([
-        api.getMailboxes(),
-        api.getSystemStatus().catch(() => null)
-      ]);
-      setMailboxes(Array.isArray(mbData) ? mbData : []);
+      const sysData = await api.getSystemStatus().catch(() => null);
       if (sysData) setSystemStatus(sysData);
     } catch (e) {
-      console.error('Failed to load system config data:', e);
+      console.error('Failed to load system status:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAIProviders = async () => {
+    try {
+      const data = await api.getAIProviders();
+      setAiProviders(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Failed to load AI providers:', e);
     }
   };
 
@@ -38,70 +91,144 @@ const SystemConfig = () => {
     try {
       setActionLoading(true);
       setFeedback(null);
-      const res = await api.connectMailbox();
-      setFeedback({ type: 'success', message: res.message || 'Gmail Account Connected Successfully!' });
-      await fetchData();
+      const res = await connectMailbox();
+      if (res.success) {
+        setFeedback({ type: 'success', message: 'Gmail Account Connected Successfully!' });
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Failed to connect Gmail account' });
+      }
     } catch (e) {
-      setFeedback({ type: 'error', message: e.response?.data?.detail || e.message || 'Failed to connect Gmail account' });
+      setFeedback({ type: 'error', message: e.message || 'Failed to connect Gmail account' });
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleSwitchAccount = async () => {
-    try {
-      setActionLoading(true);
-      setFeedback({ type: 'info', message: 'Launching Google Account Chooser... Please select your account.' });
-      const res = await api.switchMailboxAccount();
-      setFeedback({ type: 'success', message: res.message || 'Successfully switched Gmail account!' });
-      await fetchData();
-    } catch (e) {
-      setFeedback({ type: 'error', message: e.response?.data?.detail || e.message || 'Account switch failed' });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleManualSync = async (mailboxId) => {
+  const handleDisconnect = async () => {
     try {
       setActionLoading(true);
       setFeedback(null);
-      const res = await api.syncMailbox(mailboxId);
-      setFeedback({ type: 'success', message: res.message || 'Sync completed successfully!' });
-      await fetchData();
-    } catch (e) {
-      setFeedback({ type: 'error', message: e.response?.data?.detail || e.message || 'Sync failed' });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleDisconnect = async (mailboxId) => {
-    try {
-      setActionLoading(true);
-      setFeedback(null);
-      await api.disconnectMailbox(mailboxId);
-      setFeedback({ type: 'success', message: 'Mailbox disconnected successfully' });
-      await fetchData();
+      setShowDisconnectModal(false);
+      const res = await disconnectMailbox(null, disconnectDeleteData);
+      if (res.success) {
+        setFeedback({ type: 'success', message: disconnectDeleteData ? 'Mailbox disconnected and all data deleted' : 'Mailbox disconnected successfully' });
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Failed to disconnect' });
+      }
     } catch (e) {
       setFeedback({ type: 'error', message: 'Failed to disconnect mailbox' });
     } finally {
       setActionLoading(false);
+      setDisconnectDeleteData(false);
     }
   };
 
-  const handleReconnect = async (mailboxId) => {
+  const handleReconnect = async () => {
     try {
       setActionLoading(true);
       setFeedback(null);
-      await api.reconnectMailbox(mailboxId);
-      setFeedback({ type: 'success', message: 'Mailbox re-connected successfully' });
-      await fetchData();
+      const res = await reconnectMailbox();
+      if (res.success) {
+        setFeedback({ type: 'success', message: 'Mailbox re-connected successfully' });
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Failed to reconnect' });
+      }
     } catch (e) {
       setFeedback({ type: 'error', message: 'Failed to reconnect mailbox' });
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleManualSync = async () => {
+    if (!activeMailbox) return;
+    try {
+      setActionLoading(true);
+      setFeedback(null);
+      const res = await syncMailbox(activeMailbox.id);
+      if (res.success) {
+        setFeedback({ type: 'success', message: 'Sync completed successfully!' });
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Sync failed' });
+      }
+    } catch (e) {
+      setFeedback({ type: 'error', message: e.response?.data?.detail || 'Sync failed' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleProviderTypeChange = (type) => {
+    const defaults = PROVIDER_DEFAULTS[type] || {};
+    setProviderForm(prev => ({
+      ...prev,
+      provider_type: type,
+      model: defaults.model || '',
+      base_url: defaults.base_url || '',
+    }));
+  };
+
+  const handleSaveProvider = async () => {
+    try {
+      setActionLoading(true);
+      if (editingProvider) {
+        await api.updateAIProvider(editingProvider.id, providerForm);
+        setFeedback({ type: 'success', message: 'Provider updated successfully' });
+      } else {
+        await api.createAIProvider(providerForm);
+        setFeedback({ type: 'success', message: 'Provider created successfully' });
+      }
+      setShowProviderForm(false);
+      setEditingProvider(null);
+      setProviderForm(getDefaultProviderForm());
+      await fetchAIProviders();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'Failed to save provider';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTestProvider = async (providerId) => {
+    try {
+      setTestResults(prev => ({ ...prev, [providerId]: { loading: true } }));
+      const result = await api.testAIProvider(providerId);
+      // Safely read properties — result is always an object now
+      const safeResult = result || {};
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: {
+          loading: false,
+          success: !!safeResult.success,
+          message: safeResult.success ? (safeResult.message || 'OK') : (safeResult.error || 'Test failed'),
+          latency: safeResult.latency_ms || null,
+          model: safeResult.model || null,
+        }
+      }));
+      await fetchAIProviders();
+    } catch (e) {
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: { loading: false, success: false, message: 'Test failed: ' + (e?.message || 'Unknown error') }
+      }));
+    }
+  };
+
+  const handleDeleteProvider = async (providerId) => {
+    try {
+      await api.deleteAIProvider(providerId);
+      setFeedback({ type: 'success', message: 'Provider deleted' });
+      await fetchAIProviders();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'Failed to delete provider';
+      setFeedback({ type: 'error', message: msg });
+    }
+  };
+
+  const copyApiKey = (key) => {
+    navigator.clipboard.writeText(key || '');
+    setFeedback({ type: 'success', message: 'API key copied to clipboard' });
   };
 
   if (user?.role !== 'Admin' && user?.role !== 'Editor') {
@@ -114,16 +241,14 @@ const SystemConfig = () => {
     );
   }
 
-  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
-  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
-
   const sections = [
     { id: 'gmail', title: 'Gmail Connection & Scheduler', icon: <Mail className="w-5 h-5" />, desc: 'Connect, switch account & manage background sync.' },
-    { id: 'ai_provider', title: 'AI Provider Settings', icon: <Key className="w-5 h-5 text-indigo-600" />, desc: 'Configure default LLM provider & API credentials.' },
+    { id: 'ai_provider', title: 'AI Provider Settings', icon: <Key className="w-5 h-5 text-indigo-600" />, desc: 'Configure LLM providers, test connections, manage failover.' },
     { id: 'general', title: 'General Settings', icon: <Server className="w-5 h-5" />, desc: 'Configure global application parameters.' },
-    { id: 'keys', title: 'API Keys & Secrets', icon: <Key className="w-5 h-5" />, desc: 'Manage Supabase and API credentials.' },
     { id: 'notifications', title: 'Notifications', icon: <Bell className="w-5 h-5" />, desc: 'System alert & digest preferences.' },
   ];
+
+  const sortedProviders = [...aiProviders].sort((a, b) => a.priority - b.priority);
 
   return (
     <div className="space-y-6">
@@ -132,29 +257,21 @@ const SystemConfig = () => {
           <SettingsIcon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
           Settings & Integrations
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Central control panel for Gmail integration, workspace settings, and security.</p>
+        <p className="text-sm text-gray-500 mt-1">Central control panel for Gmail integration, AI providers, and workspace settings.</p>
       </div>
 
       {feedback && (
         <div className={`p-4 rounded-xl flex items-center gap-3 text-sm ${feedback.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : feedback.type === 'info' ? 'bg-blue-50 text-blue-800 border border-blue-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
           {feedback.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : feedback.type === 'info' ? <RefreshCw className="w-5 h-5 text-blue-600 animate-spin" /> : <AlertTriangle className="w-5 h-5 text-red-600" />}
           <span>{feedback.message}</span>
+          <button onClick={() => setFeedback(null)} className="ml-auto"><X className="w-4 h-4" /></button>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Navigation Sidebar */}
         <div className="lg:col-span-1 space-y-2">
           {sections.map((sec) => (
-            <div
-              key={sec.id}
-              onClick={() => setActiveTab(sec.id)}
-              className={`p-4 rounded-xl cursor-pointer flex items-start gap-3 transition-colors ${
-                activeTab === sec.id
-                  ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400'
-                  : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent text-gray-700 dark:text-gray-300'
-              }`}
-            >
+            <div key={sec.id} onClick={() => setActiveTab(sec.id)} className={`p-4 rounded-xl cursor-pointer flex items-start gap-3 transition-colors ${activeTab === sec.id ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent text-gray-700 dark:text-gray-300'}`}>
               <div className="mt-0.5">{sec.icon}</div>
               <div>
                 <h3 className="text-sm font-bold">{sec.title}</h3>
@@ -164,249 +281,596 @@ const SystemConfig = () => {
           ))}
         </div>
 
-        {/* Content Area */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           {activeTab === 'gmail' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-blue-600" />
-                    Gmail Connection Lifecycle
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-1">Manage connected account, switch accounts, and monitor APScheduler state.</p>
-                </div>
-                {isConnected && (
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Connected
-                  </span>
-                )}
-              </div>
-
-              {loading && mailboxes.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">Loading connection state...</div>
-              ) : activeMailbox ? (
-                <div className="space-y-6">
-                  {/* Account Card */}
-                  <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-5 border border-gray-200 dark:border-gray-700 space-y-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                      <div>
-                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Current Gmail Address</div>
-                        <div className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{activeMailbox.account_identifier}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Synced Emails</div>
-                        <div className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-0.5">{activeMailbox.email_count || 0} Emails</div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs">
-                      <div>
-                        <span className="text-gray-500">Sync Status: </span>
-                        <span className={`font-semibold capitalize ${activeMailbox.sync_status === 'connected' ? 'text-green-600' : 'text-amber-600'}`}>
-                          {activeMailbox.sync_status}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Last Synced: </span>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {activeMailbox.last_sync_at ? new Date(activeMailbox.last_sync_at).toLocaleString() : 'Just now'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scheduler Status Card */}
-                  {systemStatus && systemStatus.scheduler && (
-                    <div className="bg-blue-50/60 dark:bg-blue-950/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2 font-bold text-sm text-gray-900 dark:text-white">
-                          <Activity className="w-4 h-4 text-blue-600" />
-                          APScheduler Background Polling Status
-                        </div>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${systemStatus.scheduler.is_running ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {systemStatus.scheduler.is_running ? 'RUNNING (Auto Startup Active)' : 'STOPPED'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
-                        <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <div className="text-gray-400 text-[10px] uppercase font-semibold">Health Score</div>
-                          <div className="font-bold text-green-600 text-sm mt-0.5">{systemStatus.health_score}%</div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <div className="text-gray-400 text-[10px] uppercase font-semibold">Poll Interval</div>
-                          <div className="font-bold text-gray-800 dark:text-white text-sm mt-0.5">{systemStatus.scheduler.interval_minutes} Minute</div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <div className="text-gray-400 text-[10px] uppercase font-semibold">Next Sync</div>
-                          <div className="font-bold text-blue-600 text-xs mt-0.5 truncate">
-                            {systemStatus.scheduler.next_run_at ? new Date(systemStatus.scheduler.next_run_at).toLocaleTimeString() : 'Pending'}
-                          </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <div className="text-gray-400 text-[10px] uppercase font-semibold">Total Runs</div>
-                          <div className="font-bold text-gray-800 dark:text-white text-sm mt-0.5">{systemStatus.scheduler.execution_count}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions Bar */}
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
-                    <button
-                      onClick={() => handleManualSync(activeMailbox.id)}
-                      disabled={actionLoading || !isConnected}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${actionLoading ? 'animate-spin' : ''}`} />
-                      Manual Sync Now
-                    </button>
-
-                    <button
-                      onClick={handleSwitchAccount}
-                      disabled={actionLoading}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <UserCheck className="w-4 h-4" />
-                      Switch / Change Gmail Account
-                    </button>
-
-                    <button
-                      onClick={() => handleReconnect(activeMailbox.id)}
-                      disabled={actionLoading}
-                      className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <Link2 className="w-4 h-4 text-blue-500" />
-                      Reconnect OAuth
-                    </button>
-
-                    {isConnected && (
-                      <button
-                        onClick={() => handleDisconnect(activeMailbox.id)}
-                        disabled={actionLoading}
-                        className="bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ml-auto disabled:opacity-50"
-                      >
-                        <Power className="w-4 h-4" />
-                        Disconnect
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12 space-y-4">
-                  <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-full flex items-center gap-2 justify-center mx-auto">
-                    <Mail className="w-8 h-8" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">No Gmail Account Connected</h3>
-                  <p className="text-sm text-gray-500 max-w-md mx-auto">Connect your Gmail account using Google OAuth to enable automated synchronization, attachment storage, and AI workflows.</p>
-                  <button
-                    onClick={handleConnect}
-                    disabled={actionLoading}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading ? 'Connecting...' : 'Connect Gmail Account'}
-                  </button>
-                </div>
-              )}
-            </div>
+            <GmailTab
+              activeMailbox={activeMailbox}
+              isConnected={isConnected}
+              isSyncing={isSyncing}
+              systemStatus={systemStatus}
+              actionLoading={actionLoading}
+              onConnect={handleConnect}
+              onDisconnect={() => setShowDisconnectModal(true)}
+              onReconnect={handleReconnect}
+              onManualSync={handleManualSync}
+            />
           )}
 
           {activeTab === 'ai_provider' && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Key className="w-5 h-5 text-indigo-600" />
-                  System Administrator — AI Providers & Failover Pipeline
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">Configure multi-provider priority, API credentials, and automatic failover pipeline.</p>
-              </div>
-
-              <div className="space-y-4">
-                {/* Primary Provider */}
-                <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-indigo-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded">Primary Provider</span>
-                      <h4 className="font-bold text-gray-900 dark:text-white text-sm">OpenAI (gpt-4o)</h4>
-                    </div>
-                    <span className="text-xs text-green-600 font-semibold">● Connected & Active</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1">Model Selection</label>
-                      <select className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                        <option value="gpt-4o">gpt-4o (Recommended)</option>
-                        <option value="gpt-4-turbo">gpt-4-turbo</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1">API Key</label>
-                      <input type="password" defaultValue="sk-proj-••••••••••••••••3A9x" className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono" />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-1">
-                    <button
-                      onClick={() => setFeedback({ type: 'success', message: 'Primary Provider (OpenAI gpt-4o) Connection Verified!' })}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
-                    >
-                      Test OpenAI Connection
-                    </button>
-                  </div>
-                </div>
-
-                {/* Secondary Provider */}
-                <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-purple-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded">Secondary Failover</span>
-                      <h4 className="font-bold text-gray-900 dark:text-white text-sm">Google Gemini (1.5 Pro)</h4>
-                    </div>
-                    <span className="text-xs text-amber-600 font-semibold">● Standby / Fallback Ready</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1">Model Selection</label>
-                      <select className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1">API Key</label>
-                      <input type="password" defaultValue="AIzaSy••••••••••••••••9B2z" className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono" />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-1">
-                    <button
-                      onClick={() => setFeedback({ type: 'success', message: 'Secondary Provider (Google Gemini) Connection Verified!' })}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
-                    >
-                      Test Gemini Connection
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AITab
+              providers={sortedProviders}
+              showProviderForm={showProviderForm}
+              setShowProviderForm={setShowProviderForm}
+              editingProvider={editingProvider}
+              setEditingProvider={setEditingProvider}
+              providerForm={providerForm}
+              setProviderForm={setProviderForm}
+              showApiKey={showApiKey}
+              setShowApiKey={setShowApiKey}
+              testResults={testResults}
+              actionLoading={actionLoading}
+              onSave={handleSaveProvider}
+              onTest={handleTestProvider}
+              onDelete={handleDeleteProvider}
+              onCopyKey={copyApiKey}
+              onProviderTypeChange={handleProviderTypeChange}
+              getDefaultForm={getDefaultProviderForm}
+              feedback={feedback}
+              setFeedback={setFeedback}
+            />
           )}
 
           {activeTab !== 'gmail' && activeTab !== 'ai_provider' && (
             <div className="py-12 text-center text-gray-500">
               <Server className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-              <p className="font-medium text-gray-700 dark:text-gray-300">Setting section is read-only in this demo environment.</p>
+              <p className="font-medium text-gray-700 dark:text-gray-300">This section is coming soon.</p>
             </div>
           )}
         </div>
       </div>
+
+      {showDisconnectModal && (
+        <DisconnectModal
+          email={activeMailbox?.account_identifier}
+          deleteData={disconnectDeleteData}
+          setDeleteData={setDisconnectDeleteData}
+          onConfirm={handleDisconnect}
+          onCancel={() => { setShowDisconnectModal(false); setDisconnectDeleteData(false); }}
+          loading={actionLoading}
+        />
+      )}
     </div>
   );
 };
+
+const GmailTab = ({ activeMailbox, isConnected, isSyncing, systemStatus, actionLoading, onConnect, onDisconnect, onReconnect, onManualSync }) => {
+  const [healthStatus, setHealthStatus] = useState(null);
+
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const [dbRes, sysRes] = await Promise.allSettled([
+          api.getSystemStatus(),
+          fetch(`${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '')}/api/v1/health/database`).then(r => r.json()),
+        ]);
+        setHealthStatus({
+          gmail: isConnected ? 'ok' : 'warning',
+          scheduler: sysRes.status === 'fulfilled' && sysRes.value?.scheduler?.is_running ? 'ok' : 'warning',
+          database: dbRes.status === 'fulfilled' ? 'ok' : 'error',
+          storage: 'ok',
+          ai_provider: 'ok',
+        });
+      } catch {
+        setHealthStatus({
+          gmail: isConnected ? 'ok' : 'warning',
+          scheduler: 'unknown',
+          database: 'unknown',
+          storage: 'unknown',
+          ai_provider: 'unknown',
+        });
+      }
+    };
+    checkHealth();
+    const timer = setInterval(checkHealth, 30000);
+    return () => clearInterval(timer);
+  }, [isConnected]);
+
+  const healthItems = [
+    { key: 'gmail', label: 'Gmail Connected', icon: <Mail className="w-4 h-4" /> },
+    { key: 'scheduler', label: 'Scheduler Running', icon: <Activity className="w-4 h-4" /> },
+    { key: 'database', label: 'Database Connected', icon: <Server className="w-4 h-4" /> },
+    { key: 'storage', label: 'Storage Available', icon: <CheckCircle2 className="w-4 h-4" /> },
+    { key: 'ai_provider', label: 'AI Provider', icon: <Key className="w-4 h-4" /> },
+  ];
+
+  const statusColor = {
+    ok: 'bg-green-100 text-green-700 border-green-200',
+    warning: 'bg-amber-100 text-amber-700 border-amber-200',
+    error: 'bg-red-100 text-red-700 border-red-200',
+    unknown: 'bg-gray-100 text-gray-500 border-gray-200',
+  };
+
+  const statusLabel = { ok: 'Healthy', warning: 'Attention', error: 'Error', unknown: 'Unknown' };
+
+  return (
+    <div className="space-y-6">
+      {/* System Health Widget */}
+      <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 text-xs font-bold text-gray-800 dark:text-gray-200 mb-3">
+          <Activity className="w-4 h-4 text-blue-600" />
+          System Health
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {healthItems.map((item) => {
+            const status = healthStatus?.[item.key] || 'unknown';
+            return (
+              <div key={item.key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${statusColor[status]}`}>
+                {item.icon}
+                <div className="flex flex-col">
+                  <span>{item.label}</span>
+                  <span className="text-[10px] font-normal opacity-70">{statusLabel[status]}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-4">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <Mail className="w-5 h-5 text-blue-600" />
+          Gmail Connection Lifecycle
+        </h2>
+        <p className="text-xs text-gray-500 mt-1">Connect, switch account & manage background sync.</p>
+      </div>
+      {isConnected && (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+          <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Connected
+        </span>
+      )}
+      {isSyncing && (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+          <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> Syncing
+        </span>
+      )}
+    </div>
+
+    {activeMailbox ? (
+      <div className="space-y-6">
+        <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-5 border border-gray-200 dark:border-gray-700 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Current Gmail Address</div>
+              <div className="text-lg font-bold text-gray-900 dark:text-white mt-0.5">{activeMailbox.account_identifier}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs">
+            <div>
+              <span className="text-gray-500">Sync Status: </span>
+              <span className={`font-semibold capitalize ${isConnected ? 'text-green-600' : 'text-amber-600'}`}>
+                {activeMailbox.sync_status}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-500">Last Synced: </span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {activeMailbox.last_sync_at ? new Date(activeMailbox.last_sync_at).toLocaleString() : 'Never'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {systemStatus?.scheduler && (
+          <div className="bg-blue-50/60 dark:bg-blue-950/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800 space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2 font-bold text-sm text-gray-900 dark:text-white">
+                <Activity className="w-4 h-4 text-blue-600" />
+                APScheduler Status
+              </div>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${systemStatus.scheduler.is_running ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {systemStatus.scheduler.is_running ? 'RUNNING' : 'STOPPED'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
+              <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="text-gray-400 text-[10px] uppercase font-semibold">Health</div>
+                <div className="font-bold text-green-600 text-sm mt-0.5">{systemStatus.health_score}%</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="text-gray-400 text-[10px] uppercase font-semibold">Interval</div>
+                <div className="font-bold text-gray-800 dark:text-white text-sm mt-0.5">{systemStatus.scheduler.interval_minutes}m</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="text-gray-400 text-[10px] uppercase font-semibold">Runs</div>
+                <div className="font-bold text-gray-800 dark:text-white text-sm mt-0.5">{systemStatus.scheduler.execution_count}</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="text-gray-400 text-[10px] uppercase font-semibold">Failures</div>
+                <div className="font-bold text-red-600 text-sm mt-0.5">{systemStatus.scheduler.failure_count}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button onClick={onManualSync} disabled={actionLoading || !isConnected} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${actionLoading ? 'animate-spin' : ''}`} />
+            Manual Sync
+          </button>
+          <button onClick={() => {}} disabled={actionLoading} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+            <UserCheck className="w-4 h-4" />
+            Switch Account
+          </button>
+          <button onClick={onReconnect} disabled={actionLoading} className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+            <Link2 className="w-4 h-4 text-blue-500" />
+            Reconnect
+          </button>
+          {isConnected && (
+            <button onClick={onDisconnect} disabled={actionLoading} className="bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ml-auto disabled:opacity-50">
+              <Power className="w-4 h-4" />
+              Disconnect
+            </button>
+          )}
+        </div>
+      </div>
+    ) : (
+      <div className="text-center py-12 space-y-4">
+        <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+          <Mail className="w-8 h-8" />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white">No Gmail Account Connected</h3>
+        <p className="text-sm text-gray-500 max-w-md mx-auto">Connect your Gmail account to enable automated sync, attachment storage, and AI workflows.</p>
+        <button onClick={onConnect} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50">
+          {actionLoading ? 'Connecting...' : 'Connect Gmail Account'}
+        </button>
+      </div>
+    )}
+  </div>
+  );
+};
+
+const AITab = ({
+  providers, showProviderForm, setShowProviderForm, editingProvider, setEditingProvider,
+  providerForm, setProviderForm, showApiKey, setShowApiKey, testResults, actionLoading,
+  onSave, onTest, onDelete, onCopyKey, onProviderTypeChange, getDefaultForm,
+  feedback, setFeedback
+}) => {
+  const availableModels = PROVIDER_MODELS[providerForm.provider_type] || [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <Key className="w-5 h-5 text-indigo-600" />
+            AI Provider Configuration
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">Configure LLM providers, test connections, manage failover pipeline.</p>
+        </div>
+        <button onClick={() => { setShowProviderForm(true); setEditingProvider(null); setProviderForm(getDefaultForm()); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Add Provider
+        </button>
+      </div>
+
+      {showProviderForm && (
+        <ProviderForm
+          form={providerForm}
+          setForm={setProviderForm}
+          editing={editingProvider}
+          showApiKey={showApiKey}
+          setShowApiKey={setShowApiKey}
+          availableModels={availableModels}
+          onTypeChange={onProviderTypeChange}
+          onSave={onSave}
+          onCancel={() => { setShowProviderForm(false); setEditingProvider(null); setProviderForm(getDefaultForm()); }}
+          loading={actionLoading}
+        />
+      )}
+
+      <div className="space-y-3">
+        {providers.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <Key className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+            <p className="font-medium">No AI providers configured</p>
+            <p className="text-xs mt-1">Add a provider to enable AI-powered workflows.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 dark:bg-gray-900">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-500">Priority</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-500">Provider</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-500">Model</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-500">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-500">Primary</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {providers.map((p) => {
+                  const tr = testResults[p.id];
+                  return (
+                    <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs">{p.priority}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900 dark:text-white">{p.name}</div>
+                        <div className="text-[10px] text-gray-400 capitalize">{p.provider_type}</div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-gray-700 dark:text-gray-300">{p.model}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 font-semibold ${p.status === 'active' || p.status === 'connected' ? 'text-green-600' : p.status === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${p.status === 'active' || p.status === 'connected' ? 'bg-green-500' : p.status === 'error' ? 'bg-red-500' : 'bg-gray-300'}`} />
+                          {p.status === 'active' || p.status === 'connected' ? 'Connected' : p.status === 'error' ? 'Error' : 'Not Tested'}
+                        </span>
+                        {tr && !tr.loading && (
+                          <div className={`text-[10px] mt-0.5 ${tr.success ? 'text-green-500' : 'text-red-500'}`}>
+                            {tr.message} {tr.latency && `(${tr.latency}ms)`}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {p.is_primary ? (
+                          <span className="inline-flex items-center gap-1 text-indigo-600 font-semibold text-xs">
+                            <Zap className="w-3 h-3" /> Primary
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">Fallback #{p.priority}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => onTest(p.id)}
+                            disabled={tr?.loading}
+                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-2.5 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-colors"
+                          >
+                            {tr?.loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <TestTube className="w-3 h-3" />}
+                            Test
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingProvider(p);
+                              setProviderForm({
+                                name: p.name,
+                                provider_type: p.provider_type,
+                                model: p.model,
+                                api_key: '',
+                                base_url: p.base_url || '',
+                                is_primary: p.is_primary,
+                                priority: p.priority,
+                                max_tokens: p.max_tokens || 4000,
+                                temperature: p.temperature || 0.7,
+                                timeout: p.timeout || 30,
+                                retry_count: p.retry_count || 3,
+                                is_enabled: p.is_enabled,
+                              });
+                              setShowProviderForm(true);
+                            }}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-[10px] font-semibold"
+                          >
+                            Edit
+                          </button>
+                          <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {providers.length > 1 && (
+          <div className="bg-blue-50/60 dark:bg-blue-950/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+            <div className="flex items-center gap-2 text-xs font-bold text-blue-800 dark:text-blue-300 mb-2">
+              <Zap className="w-4 h-4" />
+              Automatic Failover Pipeline
+            </div>
+            <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-400 flex-wrap">
+              {providers.map((p, i) => (
+                <React.Fragment key={p.id}>
+                  <span className="bg-white dark:bg-gray-800 px-2 py-1 rounded border border-blue-200 dark:border-blue-700 font-semibold">
+                    {p.name}
+                  </span>
+                  {i < providers.length - 1 && <span className="text-blue-400">→</span>}
+                </React.Fragment>
+              ))}
+              <span className="text-blue-400">→</span>
+              <span className="bg-white dark:bg-gray-800 px-2 py-1 rounded border border-blue-200 dark:border-blue-700 font-semibold text-gray-500">
+                Static Fallback
+              </span>
+            </div>
+            <p className="text-[10px] text-blue-600 dark:text-blue-500 mt-2">If Priority 1 fails, the system automatically tries Priority 2, then 3. No administrator intervention needed.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ProviderForm = ({ form, setForm, editing, showApiKey, setShowApiKey, availableModels, onTypeChange, onSave, onCancel, loading }) => (
+  <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-700 space-y-5">
+    <h3 className="font-bold text-sm text-gray-900 dark:text-white">{editing ? 'Edit Provider' : 'Add New Provider'}</h3>
+
+    <div className="grid grid-cols-2 gap-4 text-xs">
+      <div>
+        <label className="block text-gray-400 font-semibold mb-1">Provider Name</label>
+        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="OpenAI Production" />
+      </div>
+      <div>
+        <label className="block text-gray-400 font-semibold mb-1">Provider Type</label>
+        <div className="relative">
+          <select value={form.provider_type} onChange={(e) => onTypeChange(e.target.value)} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white appearance-none">
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="claude">Anthropic Claude</option>
+            <option value="ollama">Ollama (Local)</option>
+            <option value="openai_compatible">OpenAI Compatible</option>
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-gray-400 font-semibold mb-1">Model</label>
+        {availableModels.length > 0 ? (
+          <div className="relative">
+            <select value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white appearance-none">
+              {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
+        ) : (
+          <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono" placeholder="model-name" />
+        )}
+      </div>
+      <div>
+        <label className="block text-gray-400 font-semibold mb-1">Priority</label>
+        <input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: parseInt(e.target.value) || 0 })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" min="0" />
+        <p className="text-[10px] text-gray-400 mt-1">Lowest number wins. Example: 1 = OpenAI, 2 = Gemini, 3 = Claude</p>
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Connection</h4>
+      <div className="grid grid-cols-2 gap-4 text-xs">
+        <div>
+          <label className="block text-gray-400 font-semibold mb-1">API Key</label>
+          <div className="relative">
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              value={form.api_key}
+              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+              className="w-full p-2.5 pr-20 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono"
+              placeholder={editing ? 'Leave blank to keep existing' : 'sk-...'}
+            />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+              <button type="button" onClick={() => navigator.clipboard.writeText(form.api_key)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+        {(form.provider_type === 'openai_compatible' || form.provider_type === 'ollama') && (
+          <div>
+            <label className="block text-gray-400 font-semibold mb-1">Base URL</label>
+            <input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono text-[11px]" placeholder="https://api.openai.com/v1" />
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Parameters</h4>
+      <div className="grid grid-cols-4 gap-4 text-xs">
+        <div>
+          <label className="block text-gray-400 font-semibold mb-1">Temperature</label>
+          <input type="number" step="0.1" min="0" max="2" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) || 0.7 })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+        </div>
+        <div>
+          <label className="block text-gray-400 font-semibold mb-1">Max Tokens</label>
+          <input type="number" value={form.max_tokens} onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) || 4000 })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+        </div>
+        <div>
+          <label className="block text-gray-400 font-semibold mb-1">Timeout (sec)</label>
+          <input type="number" value={form.timeout} onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 30 })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+        </div>
+        <div>
+          <label className="block text-gray-400 font-semibold mb-1">Retry Count</label>
+          <input type="number" value={form.retry_count} onChange={(e) => setForm({ ...form, retry_count: parseInt(e.target.value) || 3 })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+        </div>
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Status</h4>
+      <div className="flex items-center gap-6">
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={form.is_enabled} onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })} className="rounded" />
+          Provider Enabled
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={form.is_primary} onChange={(e) => setForm({ ...form, is_primary: e.target.checked })} className="rounded" />
+          Primary Provider
+        </label>
+      </div>
+    </div>
+
+    <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+      <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">Cancel</button>
+      <button onClick={onSave} disabled={loading || !form.name} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+        <Save className="w-4 h-4" />
+        {editing ? 'Update Provider' : 'Create Provider'}
+      </button>
+    </div>
+  </div>
+);
+
+const DisconnectModal = ({ email, deleteData, setDeleteData, onConfirm, onCancel, loading }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onCancel}>
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+          <AlertCircle className="w-5 h-5 text-red-600" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Disconnect Gmail?</h3>
+          <p className="text-xs text-gray-500">This will affect {email || 'your connected account'}</p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 space-y-2 text-xs text-gray-600 dark:text-gray-400">
+        <p className="font-semibold text-gray-800 dark:text-gray-200 mb-2">When you disconnect:</p>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Stop Scheduler polling</div>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Pause AI processing</div>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Pause all Workflows</div>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Stop Email Monitoring</div>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Clear active mailbox session</div>
+        <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> Return to Connect Gmail screen</div>
+      </div>
+
+      <div className="bg-amber-50 dark:bg-amber-900/10 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={deleteData}
+            onChange={(e) => setDeleteData(e.target.checked)}
+            className="mt-0.5 rounded"
+          />
+          <div>
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">Also delete all synced emails and attachments</span>
+            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+              Normally leave this unchecked. Email history already collected will remain in the database.
+              Only check this if you want a completely fresh start.
+            </p>
+          </div>
+        </label>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg">
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={loading}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+        >
+          <Power className="w-4 h-4" />
+          {loading ? 'Disconnecting...' : 'Disconnect'}
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 export default SystemConfig;

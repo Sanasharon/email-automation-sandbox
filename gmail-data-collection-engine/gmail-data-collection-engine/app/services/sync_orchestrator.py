@@ -229,7 +229,7 @@ class SyncOrchestrator:
                                             attachments_skipped += 1
                                             
                                         self.db.commit()
-                                    except Exception as att_err:
+                                         except Exception as att_err:
                                         self.db.rollback()
                                         attachments_failed += 1
                                         logger.warning(f"[ATTACHMENT] Failed: {filename} for email {msg_id}: {str(att_err)}")
@@ -244,7 +244,10 @@ class SyncOrchestrator:
                                                 api_endpoint="attachments.get"
                                             )
                                         except Exception as sync_e:
-                                            self.db.rollback()
+                                            try:
+                                                self.db.rollback()
+                                            except Exception:
+                                                pass
                                             logger.error(f"[ERROR] Failed to log attachment error: {sync_e}")
                         else:
                             duplicates_skipped += 1
@@ -385,7 +388,12 @@ class SyncOrchestrator:
                 # --- Step 8: Persist metrics ---
                 if status != "cancelled":
                     try:
-                        self.db.rollback()  # Ensure clean transaction state
+                        # Ensure clean transaction state before saving metrics
+                        # Note: emails are already committed individually during the sync loop
+                        try:
+                            self.db.rollback()
+                        except Exception:
+                            pass
                         self.sync_service.complete_sync_run(
                             sync_run_id=run_id,
                             status=status,

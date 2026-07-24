@@ -1,10 +1,88 @@
-import React from 'react';
-import { Users as UsersIcon, Plus, MoreVertical, Search, Shield } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Users as UsersIcon, Plus, Trash2, Edit2, Search, Shield, X, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../api/client';
 
 const Users = () => {
   const { user } = useAuth();
-  
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' });
+  const [feedback, setFeedback] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.getUsers({ search: search || undefined });
+      setUsers(data?.data || []);
+    } catch (e) {
+      console.error('Failed to load users:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  const fetchRoles = async () => {
+    try {
+      const data = await api.getRoles();
+      setRoles(Array.isArray(data) ? data : data?.data || []);
+    } catch (e) {
+      console.error('Failed to load roles:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    fetchRoles();
+  }, [fetchUsers]);
+
+  const handleSave = async () => {
+    if (!form.name || !form.email) {
+      setFeedback({ type: 'error', message: 'Name and email are required' });
+      return;
+    }
+    if (!editingUser && !form.password) {
+      setFeedback({ type: 'error', message: 'Password is required for new users' });
+      return;
+    }
+    try {
+      setSaving(true);
+      if (editingUser) {
+        const payload = { name: form.name, email: form.email, role_id: form.role_id || undefined };
+        if (form.password) payload.password = form.password;
+        await api.updateUser(editingUser.id, payload);
+        setFeedback({ type: 'success', message: 'User updated successfully' });
+      } else {
+        await api.createUser(form);
+        setFeedback({ type: 'success', message: 'User created successfully' });
+      }
+      setShowForm(false);
+      setEditingUser(null);
+      setForm({ name: '', email: '', password: '', role_id: '' });
+      fetchUsers();
+    } catch (e) {
+      setFeedback({ type: 'error', message: e.response?.data?.detail || 'Failed to save user' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (userId) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    try {
+      await api.deleteUser(userId);
+      setFeedback({ type: 'success', message: 'User deleted' });
+      fetchUsers();
+    } catch (e) {
+      setFeedback({ type: 'error', message: e.response?.data?.detail || 'Failed to delete user' });
+    }
+  };
+
   if (user?.role !== 'Admin') {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -13,18 +91,6 @@ const Users = () => {
         <p className="text-gray-500 mt-2">You don't have permission to perform this action.</p>
       </div>
     );
-  }
-
-  const dummyUsers = [
-    { id: 1, name: 'Admin User', email: 'testauth@example.com', role: 'Admin', status: 'Active' },
-    { id: 2, name: 'Jane Doe', email: 'jane@example.com', role: 'Editor', status: 'Active' },
-    { id: 3, name: 'John Smith', email: 'john@example.com', role: 'Viewer', status: 'Inactive' },
-  ];
-
-  const [shouldCrash, setShouldCrash] = React.useState(false);
-
-  if (shouldCrash) {
-    throw new Error("Simulated Crash for Error Boundary Test");
   }
 
   return (
@@ -37,25 +103,60 @@ const Users = () => {
           </h1>
           <p className="text-sm text-gray-500 mt-1">Manage system users, roles, and permissions.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShouldCrash(true)} className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
-            Test Crash
-          </button>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
-            <Plus className="w-4 h-4" />
-            Add User
-          </button>
-        </div>
+        <button onClick={() => { setShowForm(true); setEditingUser(null); setForm({ name: '', email: '', password: '', role_id: '' }); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
+          <Plus className="w-4 h-4" /> Add User
+        </button>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
-          <div className="relative w-64">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-gray-400" />
+      {feedback && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 text-sm ${feedback.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+          {feedback.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <AlertTriangle className="w-5 h-5 text-red-600" />}
+          <span>{feedback.message}</span>
+          <button onClick={() => setFeedback(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-700 space-y-4">
+          <h3 className="font-bold text-sm text-gray-900 dark:text-white">{editingUser ? 'Edit User' : 'Add New User'}</h3>
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="block text-gray-400 font-semibold mb-1">Name</label>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="John Doe" />
             </div>
+            <div>
+              <label className="block text-gray-400 font-semibold mb-1">Email</label>
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="john@example.com" />
+            </div>
+            <div>
+              <label className="block text-gray-400 font-semibold mb-1">Password{editingUser ? ' (leave blank to keep)' : ''}</label>
+              <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="********" />
+            </div>
+            <div>
+              <label className="block text-gray-400 font-semibold mb-1">Role</label>
+              <select value={form.role_id} onChange={(e) => setForm({ ...form, role_id: e.target.value })} className="w-full p-2.5 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                <option value="">-- Select Role --</option>
+                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setShowForm(false); setEditingUser(null); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+              {saving ? 'Saving...' : editingUser ? 'Update' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <div className="relative w-64">
+            <Search className="absolute inset-y-0 left-0 pl-3 h-4 w-4 text-gray-400 pointer-events-none" />
             <input
               type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Search users..."
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
             />
@@ -73,12 +174,16 @@ const Users = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {dummyUsers.map((u) => (
+              {loading ? (
+                <tr><td colSpan="4" className="px-6 py-8 text-center text-gray-400">Loading...</td></tr>
+              ) : users.length === 0 ? (
+                <tr><td colSpan="4" className="px-6 py-8 text-center text-gray-400">No users found</td></tr>
+              ) : users.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold text-xs">
-                        {u.name.charAt(0)}
+                        {u.name?.charAt(0) || '?'}
                       </div>
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">{u.name}</div>
@@ -87,23 +192,24 @@ const Users = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
                       {u.role}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                      u.status === 'Active' 
-                        ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800/50' 
-                        : 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700'
-                    }`}>
-                      {u.status}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                      {u.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => { setEditingUser(u); setForm({ name: u.name, email: u.email, password: '', role_id: u.role_id || '' }); setShowForm(true); }} className="text-gray-400 hover:text-blue-600 text-xs font-semibold px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDelete(u.id)} className="text-gray-400 hover:text-red-600 text-xs font-semibold px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

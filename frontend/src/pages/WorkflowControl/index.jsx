@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLiveData } from '../../hooks/useLiveData';
 import { useAuth } from '../../context/AuthContext';
+import { useMailbox } from '../../context/MailboxContext';
 import { api } from '../../api/client';
 import { DataTable } from '../../components/DataTable';
 import { SearchBar } from '../../components/SearchBar';
@@ -17,17 +18,10 @@ import { useNavigate } from 'react-router-dom';
 export const WorkflowControl = () => {
   const navigate = useNavigate();
   const { canEdit } = useAuth();
+  const { isConnected, loading: mailboxLoading } = useMailbox();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  
-  const [mailboxes, setMailboxes] = useState([]);
-  useEffect(() => {
-    api.getMailboxes().then(res => setMailboxes(Array.isArray(res) ? res : [])).catch(() => setMailboxes([]));
-  }, []);
-  
-  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
-  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -51,9 +45,23 @@ export const WorkflowControl = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchWorkflows = useCallback(() => api.getWorkflows({ status: 'all', search, page, pageSize }), [search, page, pageSize]);
-  const { data, loading, error, addItem, updateItem, removeItem } = useLiveData(fetchWorkflows, null, [fetchWorkflows]);
+  const { data, loading, error, addItem, updateItem, removeItem } = useLiveData(fetchWorkflows, null, [fetchWorkflows, isConnected], isConnected);
   
-  const { data: categoriesData } = useLiveData(api.getCategories, null, []);
+  const { data: categoriesData } = useLiveData(api.getCategories, null, [], isConnected);
+  
+  const [promptTemplates, setPromptTemplates] = useState([]);
+  
+  useEffect(() => {
+    const loadPromptTemplates = async () => {
+      try {
+        const templates = await api.getPromptTemplates();
+        setPromptTemplates(Array.isArray(templates) ? templates : []);
+      } catch (e) {
+        console.error('Failed to load prompt templates:', e);
+      }
+    };
+    loadPromptTemplates();
+  }, []);
 
   const handleCreateEdit = async () => {
     setFormError(null);
@@ -245,6 +253,26 @@ export const WorkflowControl = () => {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Disconnected Notice */}
+      {!mailboxLoading && !isConnected && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Gmail Not Connected</h3>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+              Connect your Gmail account in Settings to enable workflow creation and execution. 
+              Workflows will remain inactive until a mailbox is connected.
+            </p>
+            <button
+              onClick={() => navigate('/settings')}
+              className="mt-2 text-xs font-semibold text-amber-800 dark:text-amber-300 underline hover:no-underline"
+            >
+              Go to Settings →
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h2 className="font-headline-sm text-on-surface">Workflows</h2>
         <div className="flex gap-4">
@@ -252,11 +280,18 @@ export const WorkflowControl = () => {
           {canEdit && (
             <button 
               onClick={() => {
+                if (!isConnected) return;
                 setEditingWorkflow(null);
                 setFormData(defaultFormData);
                 setIsModalOpen(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-md font-medium text-body-md hover:bg-primary/90 transition-colors"
+              disabled={!isConnected}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium text-body-md transition-colors ${
+                isConnected 
+                  ? 'bg-primary text-on-primary hover:bg-primary/90' 
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+              }`}
+              title={isConnected ? 'Create Workflow' : 'Connect Gmail to create workflows'}
             >
               <Plus size={18} /> Create Workflow
             </button>
@@ -264,7 +299,12 @@ export const WorkflowControl = () => {
         </div>
       </div>
 
-      {error && <div className="bg-error-container text-on-error-container p-4 rounded-md text-body-md">{error}</div>}
+      {error && (
+        <div className="bg-surface-container p-4 rounded-xl text-body-md flex items-center gap-3 border border-outline-variant">
+          <AlertTriangle className="w-4 h-4 text-on-surface-variant shrink-0" />
+          <span className="text-on-surface-variant">{error}</span>
+        </div>
+      )}
 
       <div className="flat-card overflow-hidden">
         <DataTable
@@ -276,7 +316,17 @@ export const WorkflowControl = () => {
           onPageChange={setPage}
           loading={loading}
           loadingSkeleton={<LoadingSkeleton type="table" rows={5} />}
-          emptyState={<EmptyState message="No workflows found." actionText="Create Workflow" onAction={() => setIsModalOpen(true)} />}
+          emptyState={
+            !isConnected ? (
+              <EmptyState 
+                message="Connect Gmail to create and manage workflows." 
+                actionText="Go to Settings"
+                onAction={() => navigate('/settings')}
+              />
+            ) : (
+              <EmptyState message="No workflows found." actionText="Create Workflow" onAction={() => setIsModalOpen(true)} />
+            )
+          }
         />
       </div>
 
@@ -400,8 +450,9 @@ export const WorkflowControl = () => {
                         className="p-2 border border-outline-variant rounded bg-surface text-xs flex-1 font-medium"
                       >
                         <option value="">-- Select Prompt Template --</option>
-                        <option value="default_refund">Customer Refund Reply</option>
-                        <option value="default_inquiry">General Inquiry Reply</option>
+                        {promptTemplates.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}{t.purpose ? ` (${t.purpose})` : ''}</option>
+                        ))}
                       </select>
 
                       <select 

@@ -36,10 +36,11 @@ axiosClient.interceptors.request.use((config) => {
 axiosClient.interceptors.response.use(
   (response) => {
     const resData = response.data;
-    // FastAPI success_response format: { success: true, data: { ... } }
-    if (resData && resData.success !== undefined) {
-       return resData.data; 
+    // Some endpoints return { success, data }, others return { success, message } or raw arrays/objects
+    if (resData && resData.success !== undefined && resData.data !== undefined) {
+       return resData.data;
     }
+    // Return whatever we got — never undefined
     return resData;
   },
   (error) => {
@@ -48,10 +49,12 @@ axiosClient.interceptors.response.use(
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
+    } else if (error.response?.status === 403) {
+      console.warn('Permission denied:', error.config?.url);
     } else if (!error.response) {
       console.error("Network Failure: Backend is unreachable.", error);
     } else if (error.response?.status >= 500) {
-      console.error("Server Error: Something went wrong on the backend.", error);
+      console.error("Server Error:", error.config?.url, error.response?.status);
     }
     return Promise.reject(error);
   }
@@ -314,11 +317,6 @@ export const api = {
     return response.data || {};
   },
   
-  getRecentActivity: async () => {
-    const response = await axiosClient.get('/dashboard/recent-activity');
-    return response || { data: [] };
-  },
-
   getRecentSyncs: async () => {
     const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
     const response = await axios.get(`${baseHost}/dashboard/recent-syncs?limit=5`);
@@ -331,6 +329,14 @@ export const api = {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
     return response.data || response;
+  },
+
+  getMailboxStatus: async () => {
+    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
+    const response = await axios.get(`${baseHost}/mailboxes/status`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    return response.data;
   },
 
   connectMailbox: async () => {
@@ -349,9 +355,9 @@ export const api = {
     return response.data;
   },
 
-  disconnectMailbox: async (mailboxId) => {
+  disconnectMailbox: async (mailboxId, deleteData = false) => {
     const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/disconnect`, {}, {
+    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/disconnect?delete_data=${deleteData}`, {}, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
     return response.data;
@@ -461,13 +467,156 @@ export const api = {
   },
 
   createPromptTemplate: async (payload) => {
-    const response = await axiosClient.post('/prompt-templates', payload);
-    return response;
+    try {
+      const response = await axiosClient.post('/prompt-templates', payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
   },
 
   deletePromptTemplate: async (id) => {
-    const response = await axiosClient.delete(`/prompt-templates/${id}`);
-    return response;
+    try {
+      const response = await axiosClient.delete(`/prompt-templates/${id}`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  updatePromptTemplate: async (id, payload) => {
+    try {
+      const response = await axiosClient.put(`/prompt-templates/${id}`, payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  testPromptTemplate: async (id, sampleInputs) => {
+    try {
+      const response = await axiosClient.post(`/prompt-templates/${id}/test`, { sample_inputs: sampleInputs });
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  validatePromptTemplate: async (id) => {
+    try {
+      const response = await axiosClient.get(`/prompt-templates/${id}/validate`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  // ---------------------------------------------------------
+  // AI Providers
+  // ---------------------------------------------------------
+  getAIProviders: async () => {
+    try {
+      const response = await axiosClient.get('/ai-providers');
+      return response || [];
+    } catch (e) {
+      console.error('Failed to fetch AI providers:', e);
+      return [];
+    }
+  },
+
+  createAIProvider: async (payload) => {
+    try {
+      const response = await axiosClient.post('/ai-providers', payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  updateAIProvider: async (id, payload) => {
+    try {
+      const response = await axiosClient.put(`/ai-providers/${id}`, payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  deleteAIProvider: async (id) => {
+    try {
+      const response = await axiosClient.delete(`/ai-providers/${id}`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  testAIProvider: async (id) => {
+    try {
+      const response = await axiosClient.post(`/ai-providers/${id}/test`);
+      return response || { success: false, error: 'No response from server' };
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'Test failed';
+      return { success: false, error: msg };
+    }
+  },
+
+  // ---------------------------------------------------------
+  // Email Templates
+  // ---------------------------------------------------------
+  getEmailTemplates: async () => {
+    try {
+      const response = await axiosClient.get('/email-templates');
+      return response || [];
+    } catch (e) {
+      console.error('Failed to fetch email templates:', e);
+      return [];
+    }
+  },
+
+  createEmailTemplate: async (payload) => {
+    try {
+      const response = await axiosClient.post('/email-templates', payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  updateEmailTemplate: async (id, payload) => {
+    try {
+      const response = await axiosClient.put(`/email-templates/${id}`, payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  deleteEmailTemplate: async (id) => {
+    try {
+      const response = await axiosClient.delete(`/email-templates/${id}`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  // ---------------------------------------------------------
+  // System Logs
+  // ---------------------------------------------------------
+  getSystemLogs: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.level) queryParams.append('level', params.level);
+      if (params.category) queryParams.append('category', params.category);
+      if (params.page) queryParams.append('page', params.page);
+      if (params.page_size) queryParams.append('page_size', params.page_size);
+      const response = await axiosClient.get(`/logs?${queryParams.toString()}`);
+      return response || [];
+    } catch (e) {
+      console.error('Failed to fetch system logs:', e);
+      return [];
+    }
   },
 
   getPendingApprovals: async () => {
@@ -481,12 +630,90 @@ export const api = {
   },
 
   approveAIDraft: async (id, editedText) => {
-    const response = await axiosClient.post(`/ai-approvals/${id}/approve`, null, { params: { edited_text: editedText } });
-    return response;
+    try {
+      const response = await axiosClient.post(`/ai-approvals/${id}/approve`, null, { params: { edited_text: editedText } });
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
   },
 
   rejectAIDraft: async (id) => {
-    const response = await axiosClient.post(`/ai-approvals/${id}/reject`);
-    return response;
-  }
+    try {
+      const response = await axiosClient.post(`/ai-approvals/${id}/reject`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  // --- Users Management ---
+  getUsers: async (params = {}) => {
+    try {
+      const response = await axiosClient.get('/users', { params });
+      return response || { data: [], meta: {} };
+    } catch (e) {
+      console.error('Failed to fetch users:', e);
+      return { data: [], meta: {} };
+    }
+  },
+  createUser: async (payload) => {
+    try {
+      const response = await axiosClient.post('/users', payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+  updateUser: async (id, payload) => {
+    try {
+      const response = await axiosClient.put(`/users/${id}`, payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+  deleteUser: async (id) => {
+    try {
+      const response = await axiosClient.delete(`/users/${id}`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  // --- Roles Management ---
+  getRoles: async (params = {}) => {
+    try {
+      const response = await axiosClient.get('/admin/roles', { params });
+      return response || { data: [], meta: {} };
+    } catch (e) {
+      console.error('Failed to fetch roles:', e);
+      return { data: [], meta: {} };
+    }
+  },
+  createRole: async (payload) => {
+    try {
+      const response = await axiosClient.post('/admin/roles', payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+  updateRole: async (id, payload) => {
+    try {
+      const response = await axiosClient.put(`/admin/roles/${id}`, payload);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
+  deleteRole: async (id) => {
+    try {
+      const response = await axiosClient.delete(`/admin/roles/${id}`);
+      return response || {};
+    } catch (e) {
+      throw e;
+    }
+  },
 };

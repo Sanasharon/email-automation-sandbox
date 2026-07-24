@@ -67,10 +67,13 @@ class EmailService:
 
         try:
             self.db.add(email)
-            self.db.flush()
+            self.db.commit()
+            logger.info(f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} for mailbox {mailbox_account_id}")
             return True, email
         except Exception as e:
             self.db.rollback()
             if isinstance(e, IntegrityError) and ("uq_email_provider_msg" in str(e) or "duplicate key" in str(e) or "uq_email_account_provider_msg_id" in str(e)):
+                logger.info(f"[EMAIL_DUPLICATE] Duplicate email {parsed_data.get('provider_message_id')} skipped")
                 return False, None
+            logger.error(f"[EMAIL_ERROR] Failed to save email {parsed_data.get('provider_message_id')}: {e}")
             raise e

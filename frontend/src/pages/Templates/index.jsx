@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Shield, Sparkles, Trash2, Play, Check } from 'lucide-react';
+import { FileText, Plus, Shield, Sparkles, Trash2, Play, Check, Mail } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 
@@ -7,6 +7,7 @@ const Templates = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('email');
   const [promptTemplates, setPromptTemplates] = useState([]);
+  const [emailTemplates, setEmailTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Create Modal State
@@ -29,8 +30,10 @@ const Templates = () => {
       setLoading(true);
       const data = await api.getPromptTemplates();
       setPromptTemplates(data || []);
+      const emailData = await api.getEmailTemplates();
+      setEmailTemplates(Array.isArray(emailData) ? emailData : []);
     } catch (err) {
-      console.error('Failed to load prompt templates:', err);
+      console.error('Failed to load templates:', err);
     } finally {
       setLoading(false);
     }
@@ -76,24 +79,28 @@ const Templates = () => {
     }
   };
 
-  const handleRunTest = () => {
+  const handleRunTest = async () => {
+    if (!testingTemplate) return;
     setIsTesting(true);
     setTestResult('');
-    setTimeout(() => {
-      let rendered = testingTemplate.prompt_content
-        .replace(/\{\{customer_name\}\}/g, 'John Doe')
-        .replace(/\{\{email_sender\}\}/g, sampleSender)
-        .replace(/\{\{email_subject\}\}/g, sampleSubject)
-        .replace(/\{\{email_body\}\}/g, sampleBody);
-
-      setTestResult(
-        `Dear John Doe,\n\n` +
-        `Thank you for following up on your inquiry ("${sampleSubject}").\n` +
-        `We have verified your details regarding order #9910 and issued your refund.\n\n` +
-        `Best regards,\nCustomer Care Team`
-      );
+    try {
+      const result = await api.testPromptTemplate(testingTemplate.id, {
+        customer_name: 'John Doe',
+        email_sender: sampleSender,
+        email_subject: sampleSubject,
+        email_body: sampleBody
+      });
+      const safeResult = result || {};
+      if (safeResult.success) {
+        setTestResult(`--- Rendered Prompt ---\n${safeResult.rendered_prompt || ''}\n\n--- AI Response ---\n${safeResult.ai_response || ''}`);
+      } else {
+        setTestResult(`Test failed: ${safeResult.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      setTestResult(`Test failed: ${err.message || 'Unknown error'}`);
+    } finally {
       setIsTesting(false);
-    }, 800);
+    }
   };
 
   if (user?.role !== 'Admin' && user?.role !== 'Editor') {
@@ -144,10 +151,42 @@ const Templates = () => {
       </div>
 
       {activeTab === 'email' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 flex flex-col items-center text-center">
-          <FileText className="w-12 h-12 text-gray-400 mb-3" />
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Standard Email Templates</h3>
-          <p className="text-sm text-gray-500 max-w-md">Static HTML email templates for outbound campaigns.</p>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <Mail className="w-5 h-5 text-blue-500" />
+              Email Templates
+            </h2>
+            <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
+              <Plus className="w-4 h-4" /> Create Email Template
+            </button>
+          </div>
+
+          {emailTemplates.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 flex flex-col items-center text-center">
+              <FileText className="w-12 h-12 text-gray-400 mb-3" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">No email templates yet</h3>
+              <p className="text-sm text-gray-500 max-w-md">Create email templates for outbound campaigns and automated responses.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {emailTemplates.map((t) => (
+                <div key={t.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-gray-900 dark:text-white">{t.name}</h3>
+                      {t.subject && <p className="text-xs text-gray-500 mt-0.5">Subject: {t.subject}</p>}
+                    </div>
+                    {t.category && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-semibold uppercase">{t.category}</span>}
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 text-xs font-mono text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                    {t.body_html?.substring(0, 200)}...
+                  </div>
+                  <div className="text-xs text-gray-400">Created: {new Date(t.created_at).toLocaleDateString()}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -191,6 +230,9 @@ const Templates = () => {
                       <p className="text-xs text-gray-500 mt-0.5">{p.purpose || 'General AI Response'}</p>
                     </div>
                     <div className="flex items-center gap-1">
+                      <span className="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-500">
+                        Used by {p.used_by_workflows || 0} workflow{(p.used_by_workflows || 0) !== 1 ? 's' : ''}
+                      </span>
                       <button
                         onClick={() => {
                           setTestingTemplate(p);
@@ -215,13 +257,24 @@ const Templates = () => {
                     {p.prompt_content}
                   </div>
 
+                  {p.description && (
+                    <p className="text-xs text-gray-500 italic">{p.description}</p>
+                  )}
+
                   <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 flex-wrap">
                     <span>Variables:</span>
-                    {['customer_name', 'email_sender', 'email_subject', 'email_body'].map(v => (
-                      <span key={v} className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded font-mono text-[11px]">
-                        {`{{${v}}}`}
-                      </span>
-                    ))}
+                    {(() => {
+                      try {
+                        const vars = JSON.parse(p.variables_json || '[]');
+                        return vars.map(v => (
+                          <span key={v} className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded font-mono text-[11px]">
+                            {`{{${v}}}`}
+                          </span>
+                        ));
+                      } catch {
+                        return <span className="text-gray-400">None</span>;
+                      }
+                    })()}
                   </div>
                 </div>
               ))}

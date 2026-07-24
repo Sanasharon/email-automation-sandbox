@@ -4,11 +4,14 @@ from sqlalchemy import func
 from app.db.session import get_db
 from app.models.mailbox_account import MailboxAccount
 from app.models.email import Email
+from app.models.workflow import Workflow
 from app.auth.dependencies import get_current_user
 from app.services.mailbox_service import MailboxService
 from app.services.sync_orchestrator import SyncOrchestrator
 from app.providers.gmail_provider import GmailProvider
-from app.auth.gmail_oauth import clear_cached_credentials
+from app.auth.gmail_oauth import clear_cached_credentials, NonInteractiveAuthRequired
+from app.api.v1.events import broadcast_event
+from app.services.system_logger import log_sync_event, log_oauth_event
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +56,7 @@ def connect_mailbox(current_user: dict = Depends(get_current_user), db: Session 
             history_id=history_id,
             user_id=current_user["id"]
         )
+        log_sync_event("info", f"Gmail connected: {email_address}", mailbox_id=str(account.id), user_id=current_user["id"])
         return {
             "success": True,
             "message": f"Successfully connected {email_address}",
@@ -75,24 +79,145 @@ def sync_mailbox(mailbox_id: str, current_user: dict = Depends(get_current_user)
         
     try:
         provider = GmailProvider()
-        provider.authenticate()
+        try:
+            provider.authenticate(interactive=False)
+        except NonInteractiveAuthRequired:
+            raise HTTPException(
+                status_code=401, 
+                detail="OAuth credentials missing or expired. Please reconnect your Gmail account first."
+            )
         orchestrator = SyncOrchestrator(db, provider)
         success = orchestrator.run_sync(mailbox_id, mode="incremental")
         if success:
             return {"status": "success", "message": "Synchronization completed successfully"}
         raise HTTPException(status_code=400, detail="Sync failed or mailbox is locked")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Manual sync failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{mailbox_id}/disconnect")
-def disconnect_mailbox(mailbox_id: str, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def disconnect_mailbox(mailbox_id: str, delete_data: bool = False, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Full disconnect lifecycle:
+    1. Set mailbox sync_status='disconnected', is_active=False
+    2. Pause all associated workflows
+    3. Clear OAuth tokens
+    4. Optionally delete all synced emails, attachments, sync history
+    5. Broadcast mailbox_disconnected event
+    """
     account = db.query(MailboxAccount).filter(MailboxAccount.id == mailbox_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Mailbox account not found")
-    account.sync_status = "disabled"
-    db.commit()
-    return {"success": True, "message": "Mailbox disconnected successfully"}
+    
+    try:
+        # 1. Update mailbox status
+        account.sync_status = "disconnected"
+        account.is_active = False
+        db.commit()
+        
+        # 2. Pause all workflows associated with this mailbox
+        workflows = db.query(Workflow).filter(Workflow.mailbox_account_id == mailbox_id).all()
+        for workflow in workflows:
+            workflow.is_active = False
+        db.commit()
+        
+        # 3. Clear OAuth tokens
+        clear_cached_credentials()
+        log_oauth_event("info", f"OAuth tokens cleared for mailbox {account.account_identifier}", mailbox_id=mailbox_id)
+        
+        # 4. Optionally delete all synced data
+        deleted_counts = {}
+        if delete_data:
+            from app.models.attachment import Attachment
+            from app.models.sync_run import SyncRun
+            from app.models.sync_log import SyncLog
+            from app.models.sync_error import SyncError
+            from app.models.ai_approval import AIApproval
+            
+            email_ids = [str(e.id) for e in db.query(Email.id).filter(Email.mailbox_account_id == mailbox_id).all()]
+            
+            if email_ids:
+                db.query(Attachment).filter(Attachment.email_id.in_(email_ids)).delete(synchronize_session=False)
+                deleted_counts['attachments'] = len(email_ids)
+                
+                db.query(AIApproval).filter(AIApproval.email_id.in_(email_ids)).delete(synchronize_session=False)
+                deleted_counts['ai_approvals'] = len(email_ids)
+            
+            email_count = db.query(Email).filter(Email.mailbox_account_id == mailbox_id).delete(synchronize_session=False)
+            deleted_counts['emails'] = email_count
+            
+            sync_count = db.query(SyncRun).filter(SyncRun.mailbox_account_id == mailbox_id).delete(synchronize_session=False)
+            deleted_counts['sync_runs'] = sync_count
+            
+            db.query(SyncLog).filter(SyncLog.sync_run_id.in_(
+                db.query(SyncRun.id).filter(SyncRun.mailbox_account_id == mailbox_id)
+            )).delete(synchronize_session=False)
+            
+            db.query(SyncError).filter(SyncError.sync_run_id.in_(
+                db.query(SyncRun.id).filter(SyncRun.mailbox_account_id == mailbox_id)
+            )).delete(synchronize_session=False)
+            
+            db.delete(account)
+            deleted_counts['mailbox'] = 1
+            
+            logger.info(f"Deleted all data for mailbox {mailbox_id}: {deleted_counts}")
+        
+        db.commit()
+        
+        # 5. Broadcast disconnect event via SSE
+        broadcast_event("disconnect", {
+            "type": "disconnect",
+            "mailbox_id": mailbox_id,
+            "status": "disconnected",
+            "data_deleted": delete_data
+        })
+        
+        logger.info(f"Mailbox {mailbox_id} fully disconnected. Workflows paused, OAuth cleared.")
+        
+        return {
+            "success": True, 
+            "message": "Mailbox disconnected successfully",
+            "workflows_paused": len(workflows),
+            "data_deleted": delete_data,
+            "deleted_counts": deleted_counts if delete_data else None
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to disconnect mailbox {mailbox_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect mailbox: {str(e)}")
+
+@router.get("/status")
+def get_mailbox_status(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Returns the current mailbox connection status.
+    This is the single source of truth for the frontend.
+    """
+    service = MailboxService(db)
+    accounts = service.get_mailboxes_for_user(current_user["id"])
+    
+    if not accounts:
+        return {
+            "connected": False,
+            "sync_status": "disconnected",
+            "mailbox": None
+        }
+    
+    active_account = accounts[0]
+    is_connected = active_account.sync_status in ("connected", "syncing")
+    
+    return {
+        "connected": is_connected,
+        "sync_status": active_account.sync_status,
+        "mailbox": {
+            "id": str(active_account.id),
+            "account_identifier": active_account.account_identifier,
+            "sync_status": active_account.sync_status,
+            "last_sync_at": active_account.last_sync_at.isoformat() if active_account.last_sync_at else None,
+            "gmail_address": active_account.account_identifier
+        }
+    }
 
 @router.post("/{mailbox_id}/reconnect")
 def reconnect_mailbox(mailbox_id: str, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):

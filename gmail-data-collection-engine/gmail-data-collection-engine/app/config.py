@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # --- Security ---
     token_encryption_key: str
-    jwt_secret: str = "super_secret_jwt_key_for_testing"
+    jwt_secret: str
     jwt_expires_in_minutes: int = 1440
 
     # --- Google OAuth ---

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import health, auth, mailboxes, sync, emails, dashboard
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.logging import StructuredLoggingMiddleware
+from app.middleware.rate_limiter import RateLimitMiddleware
 from app.core.exceptions import global_exception_handler
 import logging
 
@@ -24,6 +25,7 @@ app = FastAPI(
 app.add_exception_handler(Exception, global_exception_handler)
 
 # Middlewares (Executed bottom-to-top)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
@@ -49,3 +51,7 @@ app.include_router(admin_router)
 # --- Sprint 4 API v1 routers ---
 from app.api.v1 import api_v1_router
 app.include_router(api_v1_router)
+
+# --- Users & Roles management ---
+from app.api.v1.roles import router as roles_router
+app.include_router(roles_router)

@@ -2,20 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Menu, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
+import { useMailbox } from '../context/MailboxContext';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
   const { user, logout } = useAuth();
+  const { isConnected, activeMailbox } = useMailbox();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
-  
-  const [mailboxes, setMailboxes] = useState([]);
-  useEffect(() => {
-    api.getMailboxes().then(res => setMailboxes(Array.isArray(res) ? res : [])).catch(() => setMailboxes([]));
-  }, []);
-  const activeMailbox = mailboxes.length > 0 ? mailboxes[0] : null;
-  const isConnected = activeMailbox && activeMailbox.sync_status === 'connected';
 
   useEffect(() => {
     const handleClickOutside = (event) => {

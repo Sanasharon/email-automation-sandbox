@@ -1,6 +1,7 @@
 import { Menu, RefreshCw, Shield } from 'lucide-react';
 import { useState } from 'react';
 import { useGlobalRefresh } from '../context/RefreshContext';
+import { useMailbox } from '../context/MailboxContext';
 import { NotificationsDropdown } from './NotificationsDropdown';
 import { ApprovalQueueDrawer } from './ApprovalQueueDrawer';
 
@@ -8,6 +9,7 @@ export const Header = ({ title, toggleSidebar }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isApprovalOpen, setIsApprovalOpen] = useState(false);
   const { triggerRefresh } = useGlobalRefresh();
+  const { isConnected, isSyncing, activeMailbox } = useMailbox();
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -42,9 +44,16 @@ export const Header = ({ title, toggleSidebar }) => {
         </button>
         <NotificationsDropdown />
         <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-lg">
-          <span className="w-2 h-2 bg-[#1A7F37] rounded-full animate-pulse"></span>
-          <span className="text-label-bold text-on-surface-variant tracking-wider">SYSTEM LIVE</span>
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#1A7F37] animate-pulse' : 'bg-amber-500'}`}></span>
+          <span className="text-label-bold text-on-surface-variant tracking-wider">
+            {isSyncing ? 'SYNCING' : isConnected ? 'GMAIL CONNECTED' : 'GMAIL DISCONNECTED'}
+          </span>
         </div>
+        {activeMailbox && (
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-surface-container-low rounded-lg">
+            <span className="text-xs text-on-surface-variant truncate max-w-[150px]">{activeMailbox.account_identifier}</span>
+          </div>
+        )}
       </div>
 
       <ApprovalQueueDrawer isOpen={isApprovalOpen} onClose={() => setIsApprovalOpen(false)} />

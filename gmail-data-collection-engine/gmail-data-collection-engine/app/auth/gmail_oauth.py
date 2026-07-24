@@ -6,6 +6,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from app.config import settings
+from app.auth.encryption import encrypt_string, decrypt_string, read_token_json, write_token_json
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class NonInteractiveAuthRequired(Exception):
 
 def get_gmail_credentials(interactive: bool = True) -> Credentials:
     """
-    Manages the Desktop OAuth flow.
+    Manages the Desktop OAuth flow with encrypted token storage.
     Validates scope, handles token reuse and refresh, or initiates a browser flow.
     If interactive=False, raises NonInteractiveAuthRequired instead of opening a GUI browser.
     """
@@ -39,20 +40,19 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
     secrets_file = settings.google_client_secrets_file
     required_scope = settings.google_oauth_scopes
 
-    # Ensure the parent directory for the token file exists safely
     os.makedirs(os.path.dirname(token_file), exist_ok=True)
-
     validate_credential_file(secrets_file)
 
     creds = None
     if os.path.exists(token_file):
         try:
-            creds = Credentials.from_authorized_user_file(token_file)
+            token_data = read_token_json(token_file)
+            if token_data:
+                creds = Credentials.from_authorized_user_info(token_data)
         except Exception as e:
-            logger.warning("Failed to load existing token file.")
+            logger.warning(f"Failed to load/decrypt existing token file: {e}")
             creds = None
 
-    # Verify scope and expiry
     if creds and creds.valid:
         if required_scope not in creds.scopes:
             logger.info("Existing token missing required scope. Re-authenticating...")
@@ -62,8 +62,7 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
         if required_scope in creds.scopes:
             try:
                 creds.refresh(Request())
-                with open(token_file, "w") as f:
-                    f.write(creds.to_json())
+                write_token_json(token_file, json.loads(creds.to_json()))
             except Exception as e:
                 logger.warning("Failed to refresh token. Re-authenticating...")
                 creds = None
@@ -81,8 +80,7 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
         )
         creds = flow.run_local_server(port=0, prompt='consent select_account')
         
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
+        write_token_json(token_file, json.loads(creds.to_json()))
 
     return creds
 

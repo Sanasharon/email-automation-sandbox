@@ -26,7 +26,7 @@ def seed_admin():
 
         # Create the test user if it doesn't exist
         email = "testauth@example.com"
-        password = "password123"
+        password = "password"
         user = db.query(User).filter(User.email == email).first()
         
         if not user:

@@ -10,6 +10,9 @@ from app.models.system_settings import SystemSetting
 from app.models.template import Template
 from app.models.prompt_template import PromptTemplate
 from app.models.ai_approval import AIApproval
+from app.models.ai_provider import AIProvider
+from app.models.email_template import EmailTemplate
+from app.models.system_log import SystemLog
 
 __all__ = [
     "MailboxAccount",
@@ -26,4 +29,7 @@ __all__ = [
     "Template",
     "PromptTemplate",
     "AIApproval",
+    "AIProvider",
+    "EmailTemplate",
+    "SystemLog",
 ]

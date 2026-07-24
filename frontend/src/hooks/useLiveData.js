@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useGlobalRefresh } from '../context/RefreshContext';
 
-export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) => {
+export const useLiveData = (fetchFn, pollingInterval = null, dependencies = [], enabled = true) => {
   const refreshContext = useGlobalRefresh();
   const globalRefreshKey = refreshContext ? refreshContext.refreshKey : 0;
   const [data, setData] = useState(null);
@@ -15,14 +15,14 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
       setLoading(true);
     }
     setIsPolling(isSilentPoll);
-    
+
     try {
       const fetchStartTime = Date.now();
       const result = await fetchFn();
-      
+
       setData(prev => {
         if (!isSilentPoll || !prev) return result;
-        
+
         const mergeArray = (prevArr, newArr) => {
           return newArr.map(newItem => {
             const prevItem = prevArr.find(p => p.id === newItem.id || p.task_id === newItem.task_id);
@@ -32,28 +32,35 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
             return newItem;
           });
         };
-        
+
         if (Array.isArray(result) && Array.isArray(prev)) return mergeArray(prev, result);
         if (result?.data && Array.isArray(result.data) && prev?.data) {
           return { ...result, data: mergeArray(prev.data, result.data) };
         }
         return result;
       });
-      
+
       setError(null);
       setLastUpdated(new Date());
     } catch (err) {
       if (!isSilentPoll) {
-        // Only show 404 as a gentle empty state message rather than a generic error
-        if (err?.response?.status === 404) {
-          setError('Data not available (404 Not Found). This module may not be implemented yet.');
+        // Never expose raw errors to the user — show friendly messages only
+        const status = err?.response?.status;
+        if (status === 404) {
+          setError('This feature is not available yet.');
+        } else if (status === 401 || status === 403) {
+          setError('You do not have permission to view this data.');
+        } else if (status >= 500) {
+          setError('Something went wrong. Please try again later.');
+        } else if (!err?.response) {
+          setError('Unable to connect to the server. Please check your connection.');
         } else {
-          setError(err.message || 'An error occurred while fetching data');
+          setError('Unable to load data. Please try again.');
         }
       } else {
-        console.error('Polling error:', err);
+        // Silent poll errors should not crash or show UI errors
+        console.error('[useLiveData] Poll error:', err?.message || err);
       }
-      throw err;
     } finally {
       setLoading(false);
       setIsPolling(false);
@@ -70,26 +77,21 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
       if (!mounted) return;
       try {
         await fetchData(true);
-        consecutiveErrors = 0; // Reset on success
+        consecutiveErrors = 0;
         if (currentInterval !== pollingInterval && pollingInterval) {
-           // Restore normal interval if it recovered
            currentInterval = pollingInterval;
            clearInterval(pollTimer);
            pollTimer = setInterval(executePoll, currentInterval);
         }
       } catch (err) {
-        // Axios errors have err.response.status
         const status = err?.response?.status;
         consecutiveErrors++;
-        
-        // If 404 Not Found, disable aggressive polling and switch to 60s
+
         if (status === 404) {
-          console.warn(`[useLiveData] Endpoint returned 404. Slowing polling to 60s to prevent spam.`);
           currentInterval = 60000;
           clearInterval(pollTimer);
           pollTimer = setInterval(executePoll, currentInterval);
         } else if (consecutiveErrors > 3) {
-           // Backoff for other persistent errors
            currentInterval = Math.min((currentInterval || 5000) * 2, 60000);
            clearInterval(pollTimer);
            pollTimer = setInterval(executePoll, currentInterval);
@@ -103,23 +105,29 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
       } catch (err) {
         const status = err?.response?.status;
         if (status === 404) {
-          currentInterval = 60000; // start slow immediately
+          currentInterval = 60000;
         }
       }
-      
+
       if (mounted && currentInterval) {
         pollTimer = setInterval(executePoll, currentInterval);
       }
     };
 
+    if (!enabled) {
+      setLoading(false);
+      setData(null);
+      setError(null);
+      return () => { mounted = false; };
+    }
+
     initialFetch();
 
-    // --- Real-Time Server-Sent Events (SSE) Push Listener ---
     let eventSource;
     try {
       const sseUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'}/events/stream`;
       eventSource = new EventSource(sseUrl);
-      
+
       eventSource.addEventListener('sync_completed', () => {
         if (mounted) {
           fetchData(true).catch(() => {});
@@ -134,16 +142,16 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
       if (pollTimer) clearInterval(pollTimer);
       if (eventSource) eventSource.close();
     };
-  }, [...dependencies, fetchData, pollingInterval, globalRefreshKey]);
+  }, [...dependencies, fetchData, pollingInterval, globalRefreshKey, enabled]);
 
   const refresh = () => fetchData(false).catch(() => {});
 
   const updateItem = useCallback((idField, idValue, updatedFields) => {
     setData(prev => {
-      const updateArray = (arr) => arr.map(item => 
+      const updateArray = (arr) => arr.map(item =>
         item[idField] === idValue ? { ...item, ...updatedFields, _lastLocalMutation: Date.now() } : item
       );
-      
+
       if (Array.isArray(prev)) return updateArray(prev);
       if (prev?.data && Array.isArray(prev.data)) return { ...prev, data: updateArray(prev.data) };
       return prev;
@@ -168,5 +176,5 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = []) 
     });
   }, []);
 
-  return { data, loading, error, lastUpdated, refresh, isPolling, updateItem, removeItem, addItem };
+  return { data, loading: enabled ? loading : false, error, lastUpdated, refresh, isPolling, updateItem, removeItem, addItem };
 };

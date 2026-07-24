@@ -12,8 +12,10 @@ import Templates from './pages/Templates';
 import SystemConfig from './pages/SystemConfig';
 import Monitoring from './pages/Monitoring';
 import ApprovalQueue from './pages/ApprovalQueue';
+import Logs from './pages/Logs';
 import { AuthProvider } from './context/AuthContext';
 import { RefreshProvider } from './context/RefreshContext';
+import { MailboxProvider } from './context/MailboxContext';
 import { ProtectedRoute } from './context/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -21,7 +23,8 @@ function App() {
   return (
     <AuthProvider>
       <RefreshProvider>
-        <BrowserRouter>
+        <MailboxProvider>
+          <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={
@@ -43,12 +46,13 @@ function App() {
               <Route path="templates" element={<ErrorBoundary><Templates /></ErrorBoundary>} />
               <Route path="settings" element={<ErrorBoundary><SystemConfig /></ErrorBoundary>} />
               <Route path="system-monitoring" element={<ErrorBoundary><Monitoring /></ErrorBoundary>} />
-              <Route path="logs" element={<ErrorBoundary><div className="p-8"><h2>System Logs (Placeholder)</h2></div></ErrorBoundary>} />
+              <Route path="logs" element={<ErrorBoundary><Logs /></ErrorBoundary>} />
               <Route path="automation/logs" element={<Navigate to="/logs" replace />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </MailboxProvider>
       </RefreshProvider>
     </AuthProvider>
   );
