@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 export const WorkflowControl = () => {
   const navigate = useNavigate();
   const { canEdit } = useAuth();
-  const { isConnected, loading: mailboxLoading } = useMailbox();
+  const { isConnected, activeMailbox, loading: mailboxLoading } = useMailbox();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -75,8 +75,15 @@ export const WorkflowControl = () => {
       const payload = {
         ...formData,
         name: formData.name.replace(/</g, "&lt;").replace(/>/g, "&gt;"),
-        description: formData.description?.replace(/</g, "&lt;").replace(/>/g, "&gt;") || "No description"
+        description: formData.description?.replace(/</g, "&lt;").replace(/>/g, "&gt;") || "No description",
+        mailbox_account_id: activeMailbox?.id
       };
+
+      if (!payload.mailbox_account_id) {
+        setFormError('No mailbox connected. Please connect Gmail first.');
+        setIsSubmitting(false);
+        return;
+      }
 
       if (editingWorkflow) {
         const updated = await api.updateWorkflow(editingWorkflow.id, payload);

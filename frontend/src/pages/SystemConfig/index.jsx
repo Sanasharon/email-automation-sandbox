@@ -193,17 +193,16 @@ const SystemConfig = () => {
   const handleTestProvider = async (providerId) => {
     try {
       setTestResults(prev => ({ ...prev, [providerId]: { loading: true } }));
-      const result = await api.testAIProvider(providerId);
-      // Safely read properties — result is always an object now
-      const safeResult = result || {};
+      const response = await api.testAIProvider(providerId);
+      const result = response?.data || response || {};
       setTestResults(prev => ({
         ...prev,
         [providerId]: {
           loading: false,
-          success: !!safeResult.success,
-          message: safeResult.success ? (safeResult.message || 'OK') : (safeResult.error || 'Test failed'),
-          latency: safeResult.latency_ms || null,
-          model: safeResult.model || null,
+          success: !!result.success,
+          message: result.success ? (result.message || 'OK') : (result.error || 'Test failed'),
+          latency: result.latency_ms || null,
+          model: result.model || null,
         }
       }));
       await fetchAIProviders();
