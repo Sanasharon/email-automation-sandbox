@@ -1,3 +1,32 @@
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Secrets & credentials
+secrets/
+credentials.json
+token.json
+*.pem
+
+# Build / dist
+dist/
+build/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.test
+
 # Testing and Dummy Files
 tests/
 test/
@@ -13,15 +42,11 @@ mock/
 mock_data/
 mockData.json
 
-# Screens and Screenshots
-*.png
-*.jpg
-*.jpeg
-*.webp
-*.gif
+# Screens and Screenshots (temporary)
 screenshots/
 screens/
 click_feedback/
+stitch_ui/
 
 # Auditing and Artifacts
 artifacts/
@@ -31,8 +56,10 @@ audits/
 scratch/
 brain/
 scratchpad*/
-*.md
 !README.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!frontend/src/assets/*.png
 
 # Implementations / Misc testing
 sandbox/
@@ -40,4 +67,3 @@ temp/
 tmp/
 *.tmp
 *.temp
-venv/

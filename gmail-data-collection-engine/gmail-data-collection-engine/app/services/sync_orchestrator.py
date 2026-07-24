@@ -229,7 +229,7 @@ class SyncOrchestrator:
                                             attachments_skipped += 1
                                             
                                         self.db.commit()
-                                         except Exception as att_err:
+                                    except Exception as att_err:
                                         self.db.rollback()
                                         attachments_failed += 1
                                         logger.warning(f"[ATTACHMENT] Failed: {filename} for email {msg_id}: {str(att_err)}")
