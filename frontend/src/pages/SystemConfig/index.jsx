@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Shield, Server, Bell, Key, Mail, RefreshCw, CheckCircle2, AlertTriangle, Power, Link2, UserCheck, Activity, Clock, Plus, Trash2, Save, TestTube, Eye, EyeOff, Copy, RotateCcw, Zap, ChevronDown, X, AlertCircle, CopyCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings as SettingsIcon, Shield, Server, Bell, Key, Mail, RefreshCw, CheckCircle2, AlertTriangle, Power, Link2, Activity, Clock, Plus, Trash2, Save, TestTube, Eye, EyeOff, Copy, RotateCcw, Zap, ChevronDown, X, AlertCircle, CopyCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
 import { api } from '../../api/client';
@@ -497,10 +497,6 @@ const GmailTab = ({ activeMailbox, isConnected, isSyncing, systemStatus, actionL
           <button onClick={onManualSync} disabled={actionLoading || !isConnected} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${actionLoading ? 'animate-spin' : ''}`} />
             Manual Sync
-          </button>
-          <button onClick={() => {}} disabled={actionLoading} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
-            <UserCheck className="w-4 h-4" />
-            Switch Account
           </button>
           <button onClick={onReconnect} disabled={actionLoading} className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
             <Link2 className="w-4 h-4 text-blue-500" />

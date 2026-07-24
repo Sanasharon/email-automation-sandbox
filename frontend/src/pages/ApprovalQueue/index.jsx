@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Shield, Check, X, Edit3, Search, Clock, Sparkles, Filter, CheckSquare, Mail } from 'lucide-react';
 import { api } from '../../api/client';
 import { StatusBadge } from '../../components/StatusBadge';

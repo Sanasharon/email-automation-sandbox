@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List
 
 
 class Settings(BaseSettings):
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
 
     # --- Runtime ---
     environment: str = "development"
+    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # --- Scheduler ---
     enable_scheduler: bool = False

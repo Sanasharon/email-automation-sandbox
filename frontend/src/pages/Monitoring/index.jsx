@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Chart from 'chart.js/auto';
-import { Activity, Shield, Cpu, Database, Network } from 'lucide-react';
+import { Activity, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../api/client';
 
 const Monitoring = () => {
   const { user } = useAuth();
@@ -12,16 +13,15 @@ const Monitoring = () => {
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const res = await fetch('/dashboard/metrics');
-        if (!res.ok) throw new Error('Failed to fetch metrics');
-        const data = await res.json();
-        setMetrics(data);
+        const data = await api.getDashboardSummary();
+        const cards = data?.cards || data?.data?.cards || [];
+        setMetrics(cards);
       } catch (e) {
-        console.error(e);
+        setMetrics([]);
       }
     };
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 10000); // refresh every 10s
+    const interval = setInterval(fetchMetrics, 10000);
     return () => clearInterval(interval);
   }, []);
 

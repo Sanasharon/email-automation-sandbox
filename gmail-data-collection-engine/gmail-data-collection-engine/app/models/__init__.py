@@ -7,7 +7,6 @@ from app.models.sync_error import SyncError
 from app.models.user import User, UserRole
 from app.models.workflow import Workflow, WorkflowExecution
 from app.models.system_settings import SystemSetting
-from app.models.template import Template
 from app.models.prompt_template import PromptTemplate
 from app.models.ai_approval import AIApproval
 from app.models.ai_provider import AIProvider
@@ -26,7 +25,6 @@ __all__ = [
     "Workflow",
     "WorkflowExecution",
     "SystemSetting",
-    "Template",
     "PromptTemplate",
     "AIApproval",
     "AIProvider",

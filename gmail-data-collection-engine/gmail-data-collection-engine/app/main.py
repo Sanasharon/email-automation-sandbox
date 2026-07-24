@@ -5,11 +5,11 @@ from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.logging import StructuredLoggingMiddleware
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.core.exceptions import global_exception_handler
+from app.config import settings
 import logging
 
 from app.scheduler.startup import lifespan
 
-# Configure basic logging
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
@@ -21,16 +21,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Exception Handlers
 app.add_exception_handler(Exception, global_exception_handler)
 
-# Middlewares (Executed bottom-to-top)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,10 +46,6 @@ app.include_router(dashboard.router)
 from app.api.admin import admin_router
 app.include_router(admin_router)
 
-# --- Sprint 4 API v1 routers ---
+# --- Sprint 4 API v1 routers (includes users, roles, workflows, AI, templates, logs) ---
 from app.api.v1 import api_v1_router
 app.include_router(api_v1_router)
-
-# --- Users & Roles management ---
-from app.api.v1.roles import router as roles_router
-app.include_router(roles_router)

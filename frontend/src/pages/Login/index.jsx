@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Mail, Lock, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
@@ -141,9 +141,9 @@ export const Login = () => {
             </div>
 
             <div className="text-sm">
-              <a href="#" className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400">
+              <span className="font-medium text-gray-400 dark:text-gray-600 cursor-not-allowed">
                 Forgot password?
-              </a>
+              </span>
             </div>
           </div>
 

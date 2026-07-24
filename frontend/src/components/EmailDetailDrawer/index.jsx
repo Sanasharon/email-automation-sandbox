@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Clock, FileText, CheckCircle, AlertCircle, Copy } from 'lucide-react';
 import { api } from '../../api/client';
 import { StatusBadge } from '../StatusBadge';

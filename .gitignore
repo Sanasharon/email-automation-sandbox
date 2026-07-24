@@ -1,5 +1,6 @@
 # Node
 node_modules/
+package-lock.json
 
 # Python
 __pycache__/
@@ -67,3 +68,8 @@ temp/
 tmp/
 *.tmp
 *.temp
+
+# Local scripts
+start_backend.bat
+start_frontend.bat
+backend.log
