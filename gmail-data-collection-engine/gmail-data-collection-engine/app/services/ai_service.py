@@ -7,6 +7,17 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("ai_service")
 
 
+def _decrypt_key(ciphertext: str) -> str:
+    """Decrypt a Fernet-encrypted API key. Returns the plaintext key."""
+    if not ciphertext:
+        return ciphertext
+    try:
+        from app.auth.encryption import decrypt_string
+        return decrypt_string(ciphertext)
+    except Exception:
+        return ciphertext
+
+
 class AIService:
     """
     Provider-neutral AI Service implementing automatic failover.
@@ -107,7 +118,8 @@ class AIService:
 
     def _call_openai(self, provider, prompt, system_context):
         import openai
-        client = openai.OpenAI(api_key=provider.api_key_encrypted, base_url=provider.base_url)
+        api_key = _decrypt_key(provider.api_key_encrypted or "")
+        client = openai.OpenAI(api_key=api_key, base_url=provider.base_url)
         response = client.chat.completions.create(
             model=provider.model,
             messages=[
@@ -121,7 +133,8 @@ class AIService:
 
     def _call_gemini(self, provider, prompt, system_context):
         import google.generativeai as genai
-        genai.configure(api_key=provider.api_key_encrypted)
+        api_key = _decrypt_key(provider.api_key_encrypted or "")
+        genai.configure(api_key=api_key)
         model = genai.GenerativeModel(provider.model)
         full_prompt = f"{system_context}\n\n{prompt}" if system_context else prompt
         response = model.generate_content(full_prompt)
@@ -129,7 +142,8 @@ class AIService:
 
     def _call_claude(self, provider, prompt, system_context):
         import anthropic
-        client = anthropic.Anthropic(api_key=provider.api_key_encrypted)
+        api_key = _decrypt_key(provider.api_key_encrypted or "")
+        client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model=provider.model,
             max_tokens=provider.max_tokens or 800,
@@ -152,7 +166,8 @@ class AIService:
 
     def _call_openai_compatible(self, provider, prompt, system_context):
         import openai
-        client = openai.OpenAI(api_key=provider.api_key_encrypted or "dummy", base_url=provider.base_url)
+        api_key = _decrypt_key(provider.api_key_encrypted or "")
+        client = openai.OpenAI(api_key=api_key or "dummy", base_url=provider.base_url)
         response = client.chat.completions.create(
             model=provider.model,
             messages=[

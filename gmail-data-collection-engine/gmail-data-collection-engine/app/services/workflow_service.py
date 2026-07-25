@@ -44,10 +44,15 @@ class WorkflowService(BaseService):
             actions = actions_json.get("actions", [])
             self.validate_or_fail(isinstance(actions, list) and len(actions) > 0, "At least one action is required")
             
-            valid_actions = ["add_label", "mark_important", "archive", "move_to_category", "log_execution"]
+            valid_actions = ["add_label", "mark_important", "archive", "move_to_category", "log_execution", "generate_ai_reply"]
             for action in actions:
                 act_type = action.get("type")
                 self.validate_or_fail(act_type in valid_actions, f"Invalid action type: {act_type}")
+                if act_type == "generate_ai_reply":
+                    self.validate_or_fail(
+                        action.get("prompt_template_id") is not None,
+                        "generate_ai_reply action requires a prompt_template_id"
+                    )
 
     def get_workflow(self, workflow_id: str) -> Any:
         workflow = self.repository.get(workflow_id)

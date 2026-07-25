@@ -237,7 +237,7 @@ export const WorkflowControl = () => {
     setFormData(prev => ({
       ...prev,
       actions_json: {
-        actions: [...(prev.actions_json?.actions || []), { type: 'add_label', value: '' }]
+        actions: [...(prev.actions_json?.actions || []), { type: 'add_label', value: 'Processed' }]
       }
     }));
   };
@@ -445,9 +445,10 @@ export const WorkflowControl = () => {
                   <select value={action.type} onChange={(e) => updateAction(idx, 'type', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1 font-semibold text-indigo-600 dark:text-indigo-400">
                     <option value="generate_ai_reply">✨ Generate AI Reply</option>
                     <option value="add_label">Add Gmail Label</option>
-                    <option value="forward">Forward Email</option>
-                    <option value="send_email">Send Email</option>
-                    <option value="create_ticket">Create Ticket</option>
+                    <option value="mark_important">Mark Important</option>
+                    <option value="archive">Archive</option>
+                    <option value="move_to_category">Move to Category</option>
+                    <option value="log_execution">Log Execution</option>
                   </select>
                   {action.type === 'generate_ai_reply' ? (
                     <div className="flex flex-wrap gap-2 flex-[2] items-center">

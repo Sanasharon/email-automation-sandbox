@@ -203,7 +203,7 @@ class WorkflowExecutionService(BaseService):
                     from app.models.prompt_template import PromptTemplate
                     from app.models.ai_approval import AIApproval
                     
-                    ai_service = AIService()
+                    ai_service = AIService(db=self.db)
                     prompt_template_id = action.get("prompt_template_id")
                     require_approval = action.get("require_approval", True)
                     
