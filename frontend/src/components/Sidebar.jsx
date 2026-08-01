@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Menu, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useMailbox } from '../context/MailboxContext';
+import { useMailboxes } from '../context/MailboxContext';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
   const { user, logout } = useAuth();
-  const { isConnected, activeMailbox } = useMailbox();
+  const { isConnected, activeMailbox } = useMailboxes();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -150,4 +150,3 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
     </>
   );
 };
-

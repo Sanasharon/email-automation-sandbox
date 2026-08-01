@@ -212,13 +212,6 @@ export const api = {
 
   // ---------------------------------------------------------
   // Emails
-  // TODO [BACKEND STANDARDIZATION]: This endpoint uses the Sprint 2 legacy route /emails/
-  // and does NOT follow the /api/v1/ convention used by the rest of the API (workflows, dashboard).
-  // The real call goes to the axiosClient baseURL's HOST:PORT + /emails/ directly (not /api/v1/emails).
-  // Ask the backend team to either:
-  //   (a) add a /api/v1/emails route that wraps/replaces this one, OR
-  //   (b) keep it at /emails/ and document it as a deliberate exception.
-  // Until then, this call uses a separate Axios instance without the /api/v1 prefix.
   // ---------------------------------------------------------
   getEmails: async ({ status = 'all', search = '', page = 1, pageSize = 10 }) => {
     if (USE_MOCK_DATA) {
@@ -323,60 +316,60 @@ export const api = {
     return response.data;
   },
 
-  getMailboxes: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.get(`${baseHost}/mailboxes/`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
+   // Replace the getMailboxes function with this:
+getMailboxes: async () => {
+  try {
+    // Primary attempt using axiosClient (will call `${VITE_API_BASE_URL}/mailboxes`)
+    const resp = await axiosClient.get('/mailboxes');
+    return resp;
+  } catch (err) {
+    // If the configured path returned 404, try host-root fallback (no /api/v1)
+    if (err?.response?.status === 404) {
+      try {
+        const configured = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+        const hostRoot = configured.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+        const url = `${hostRoot}/mailboxes/`;
+        const r2 = await axios.get(url, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        return r2.data || r2;
+      } catch (err2) {
+        console.error('Fallback getMailboxes failed', err2);
+        throw err; // rethrow original for debugging
+      }
+    }
+    throw err;
+  }
+},
+
+  getMailboxStatus: async () => {
+    const response = await axiosClient.get('/mailboxes/status');
     return response.data || response;
   },
 
-  getMailboxStatus: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.get(`${baseHost}/mailboxes/status`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
-  },
-
   connectMailbox: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/connect`, {}, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
+    const response = await axiosClient.post('/mailboxes/connect');
+    return response.data || response;
   },
 
   syncMailbox: async (mailboxId) => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/sync`, {}, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
+    const response = await axiosClient.post(`/mailboxes/${mailboxId}/sync`);
+    return response.data || response;
   },
 
   disconnectMailbox: async (mailboxId, deleteData = false) => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/disconnect?delete_data=${deleteData}`, {}, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
+    const response = await axiosClient.post(`/mailboxes/${mailboxId}/disconnect?delete_data=${deleteData}`);
+    return response.data || response;
   },
 
   reconnectMailbox: async (mailboxId) => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/${mailboxId}/reconnect`, {}, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
+    const response = await axiosClient.post(`/mailboxes/${mailboxId}/reconnect`);
+    return response.data || response;
   },
 
   switchMailboxAccount: async () => {
-    const baseHost = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace('/api/v1', '');
-    const response = await axios.post(`${baseHost}/mailboxes/switch-account`, {}, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.data;
+    const response = await axiosClient.post('/mailboxes/switch-account');
+    return response.data || response;
   },
 
   getSystemStatus: async () => {
@@ -396,7 +389,6 @@ export const api = {
       };
     }
     try {
-      // Axios interceptor unwraps APIResponse -> data = CurrentTaskResponse { current_task: {...} | null }
       const response = await axiosClient.get('/automation/current-task');
       return response?.current_task || null;
     } catch (e) {
@@ -410,7 +402,6 @@ export const api = {
       return { data: [{ task_id: 'q-1', task_name: 'Process rules', status: 'queued', estimated_time: '2m' }] };
     }
     try {
-      // Axios interceptor unwraps APIResponse -> data = QueueResponse { data: [...], total: n }
       const response = await axiosClient.get('/automation/queue');
       const rawData = validateArray(response?.data || [], 'Automation Queue');
       return { data: rawData, total: response?.total || rawData.length };
@@ -429,7 +420,6 @@ export const api = {
       };
     }
     try {
-      // Axios interceptor unwraps APIResponse -> data = HistoryResponse { data: [...], total, page, page_size }
       const response = await axiosClient.get('/automation/history');
       const rawData = validateArray(response?.data || [], 'Automation History');
       return { data: rawData.map(normalizeWorkflowExecution), total: response?.total || 0 };
@@ -716,45 +706,5 @@ export const api = {
       throw e;
     }
   },
-
-  // ---------------------------------------------------------
-  // Categories & Priority
-  // ---------------------------------------------------------
-  getEmailsByCategory: async ({ category = 'All', search = '', sort = 'desc', skip = 0, limit = 50 }) => {
-    const response = await axiosClient.get('/categories', {
-      params: { category, search, sort, skip, limit }
-    });
-    return response;
-  },
-
-  getCategoryCounts: async () => {
-    const response = await axiosClient.get('/categories/counts');
-    return response;
-  },
-
-  // ---------------------------------------------------------
-  // Analytics / Business Insights
-  // ---------------------------------------------------------
-  getAnalyticsSummary: async (days = 7) => {
-    const response = await axiosClient.get('/analytics/summary', { params: { days } });
-    return response;
-  },
-
-  // ---------------------------------------------------------
-  // Monitoring (queue, logs, errors)
-  // ---------------------------------------------------------
-  getQueueStatus: async () => {
-    const response = await axiosClient.get('/system/queue');
-    return response;
-  },
-
-  getProcessingLogs: async (limit = 20) => {
-    const response = await axiosClient.get('/system/logs', { params: { limit } });
-    return response?.logs || [];
-  },
-
-  getRecentErrors: async (limit = 20) => {
-    const response = await axiosClient.get('/system/errors', { params: { limit } });
-    return response?.errors || [];
-  },
 };
+export { axiosClient };

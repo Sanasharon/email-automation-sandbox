@@ -15,6 +15,20 @@ import { Plus, Play, Square, Trash2, Edit2, Check, X, PlusCircle, MinusCircle, G
 import { AlertTriangle, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+// Safe helper utilities to prevent object rendering crashes
+const ruleLabel = (rule) => {
+  if (rule == null) return '';
+  if (typeof rule === 'string') return rule;
+  const parts = [rule.field, rule.operator, rule.value];
+  return parts.filter(Boolean).join(' ') || JSON.stringify(rule);
+};
+
+const ruleKey = (rule, idx) => {
+  if (!rule) return `rule_${idx}`;
+  if (typeof rule === 'string') return rule;
+  return String(rule.id ?? rule.key ?? `rule_${idx}`);
+};
+
 export const WorkflowControl = () => {
   const navigate = useNavigate();
   const { canEdit } = useAuth();
@@ -413,7 +427,7 @@ export const WorkflowControl = () => {
             </h3>
             <div className="space-y-3">
               {formData.trigger_conditions_json.rules?.map((rule, idx) => (
-                <div key={idx} className="flex gap-2 items-center bg-surface-container-lowest p-2 border border-outline-variant rounded-md">
+                <div key={ruleKey(rule, idx)} className="flex gap-2 items-center bg-surface-container-lowest p-2 border border-outline-variant rounded-md">
                   <select value={rule.field} onChange={(e) => updateCondition(idx, 'field', e.target.value)} className="p-2 border border-outline-variant rounded bg-surface flex-1">
                     <option value="sender">Sender</option>
                     <option value="subject">Subject</option>
@@ -580,4 +594,3 @@ export const WorkflowControl = () => {
     </div>
   );
 };
-

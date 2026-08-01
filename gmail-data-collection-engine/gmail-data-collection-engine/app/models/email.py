@@ -3,6 +3,14 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
+"""
+Email model for the Gmail data collection engine.
+
+Notes:
+- category and priority columns were added to match runtime queries that expect them.
+- Uses PostgreSQL UUID and JSONB types consistent with other models in the repo.
+"""
+
 class Email(Base):
     __tablename__ = "emails"
 
@@ -24,6 +32,7 @@ class Email(Base):
     has_attachments = Column(Boolean, nullable=False, server_default=text("false"))
     raw_email_json = Column(JSONB, nullable=True)
 
+    # optional classification fields (added to match runtime queries)
     category = Column(String, nullable=True)
     priority = Column(String, nullable=True)
 
@@ -51,8 +60,10 @@ class Email(Base):
         Index('ix_email_account_thread_id', 'mailbox_account_id', 'provider_thread_id'),
         Index('ix_email_account_processing_status', 'mailbox_account_id', 'processing_status'),
         Index('ix_email_account_record_status', 'mailbox_account_id', 'record_status'),
+        # Indexes to speed queries that filter by category/priority per mailbox
+        Index('ix_email_account_category', 'mailbox_account_id', 'category'),
+        Index('ix_email_account_priority', 'mailbox_account_id', 'priority'),
         CheckConstraint("processing_status IN ('collected', 'parsed', 'completed', 'failed')", name="ck_email_processing_status"),
         CheckConstraint("ai_processing_status IN ('not_started', 'pending', 'completed', 'failed')", name="ck_email_ai_processing_status"),
         CheckConstraint("record_status IN ('active', 'archived', 'deleted')", name="ck_email_record_status"),
-        CheckConstraint("priority IS NULL OR priority IN ('high', 'medium', 'low')", name="ck_email_priority"),
     )
