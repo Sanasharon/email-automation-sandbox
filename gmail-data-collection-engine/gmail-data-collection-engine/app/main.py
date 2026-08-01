@@ -23,9 +23,8 @@ app = FastAPI(
 
 app.add_exception_handler(Exception, global_exception_handler)
 
-app.add_middleware(RateLimitMiddleware)
-app.add_middleware(StructuredLoggingMiddleware)
-app.add_middleware(RequestIDMiddleware)
+# --- CORRECT MIDDLEWARE ORDER ---
+# CORSMiddleware must be added FIRST so it executes LAST (wrapping inner layers and rate limiters)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -33,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(StructuredLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # --- Core API routers ---
 app.include_router(health.router)
@@ -49,17 +51,23 @@ app.include_router(admin_router)
 # --- Sprint 4 API v1 routers (includes users, roles, workflows, AI, templates, logs) ---
 from app.api.v1 import api_v1_router
 app.include_router(api_v1_router)
-# in app/main.py (apply into your existing FastAPI app file)
-from app.api.v1.analytics import router as analytics_router
-from app.scheduler import scheduler, register_jobs
 
-# include router
-app.include_router(analytics_router)
+# --- Analytics router registration ---
+try:
+    from app.api.v1.analytics import router as analytics_router
+    ANALYTICS_AVAILABLE = True
+except Exception:
+    ANALYTICS_AVAILABLE = False
+    analytics_router = None
+
+if ANALYTICS_AVAILABLE and analytics_router:
+    app.include_router(analytics_router)
 
 # start scheduler in startup
 @app.on_event("startup")
 async def startup_event():
     try:
+        from app.scheduler import scheduler, register_jobs
         register_jobs()
         if not scheduler.running:
             scheduler.start()
@@ -70,19 +78,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
+        from app.scheduler import scheduler
         scheduler.shutdown(wait=False)
     except Exception:
         import logging
         logging.exception("Failed to shutdown scheduler")
-
-# try to import analytics router; if it fails, continue without it so the app can start.
-try:
-    from app.api.v1.analytics import router as analytics_router
-    ANALYTICS_AVAILABLE = True
-except Exception:
-    ANALYTICS_AVAILABLE = False
-    analytics_router = None
-
-# later, after app is created, include the router only if available
-if ANALYTICS_AVAILABLE and analytics_router:
-    app.include_router(analytics_router)
