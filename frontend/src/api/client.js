@@ -89,6 +89,21 @@ axios.interceptors.response.use(
 
 export const api = {
   // ---------------------------------------------------------
+  // Auth
+  // ---------------------------------------------------------
+  login: async (credentials) => {
+    // credentials: { email, password }
+    const response = await axiosClient.post('/auth/login', credentials);
+    return response; // { success, token, user }
+  },
+
+  getCurrentUser: async () => {
+    const response = await axiosClient.get('/auth/me');
+    return response?.user ?? response;
+  },
+
+  
+  // ---------------------------------------------------------
   // Dashboard
   // ---------------------------------------------------------
   getDashboardSummary: async () => {

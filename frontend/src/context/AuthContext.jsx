@@ -5,7 +5,7 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem('token')); // Track token in state
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [verifying, setVerifying] = useState(true);
   const [authError, setAuthError] = useState(null);
 
@@ -20,6 +20,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       setVerifying(true);
+      axiosClient.defaults.headers.Authorization = `Bearer ${currentToken}`;
       const userData = await api.getCurrentUser();
       setUser(userData);
       setToken(currentToken);
@@ -28,6 +29,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('token');
       setToken(null);
       setUser(null);
+      delete axiosClient.defaults.headers.Authorization;
     } finally {
       setVerifying(false);
     }
@@ -40,15 +42,15 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (credentials) => {
     try {
       setAuthError(null);
+      
+      // Primary call through standard API wrapper targeting /api/v1/auth/login
       const response = await api.login(credentials);
       const accessToken = response.access_token || response.token;
       
       if (accessToken) {
         localStorage.setItem('token', accessToken);
         setToken(accessToken);
-        try { 
-          axiosClient.defaults.headers.Authorization = `Bearer ${accessToken}`; 
-        } catch (e) {}
+        axiosClient.defaults.headers.Authorization = `Bearer ${accessToken}`;
         
         await verifyAuth();
         return { success: true };
@@ -66,15 +68,13 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
-    try { 
-      delete axiosClient.defaults.headers.Authorization; 
-    } catch (e) {}
+    delete axiosClient.defaults.headers.Authorization;
   }, []);
 
   const value = {
     user,
     token,
-    loading: verifying, // Exposed as 'loading' for ProtectedRoute compatibility
+    loading: verifying,
     verifying,
     authError,
     login,
