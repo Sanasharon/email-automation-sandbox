@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Chart from 'chart.js/auto';
-import { Activity, Shield } from 'lucide-react';
+import { Activity, Shield, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useLiveData } from '../../hooks/useLiveData';
 import { api } from '../../api/client';
 
 const Monitoring = () => {
@@ -9,7 +10,19 @@ const Monitoring = () => {
   const [metrics, setMetrics] = useState([]);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
-  
+
+  const fetchQueue = useCallback(() => api.getQueueStatus(), []);
+  const { data: queue } = useLiveData(fetchQueue, 10000, []);
+
+  const fetchStatus = useCallback(() => api.getSystemStatus(), []);
+  const { data: status } = useLiveData(fetchStatus, 15000, []);
+
+  const fetchLogs = useCallback(() => api.getProcessingLogs(20), []);
+  const { data: logs } = useLiveData(fetchLogs, 10000, []);
+
+  const fetchErrors = useCallback(() => api.getRecentErrors(20), []);
+  const { data: errors } = useLiveData(fetchErrors, 10000, []);
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -124,6 +137,78 @@ const Monitoring = () => {
             <span className="text-sm text-green-600 dark:text-green-400 font-medium">Operational</span>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Queue Activity</h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Queued jobs</span><span className="font-medium text-gray-900 dark:text-white">{queue?.queued ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">In progress</span><span className="font-medium text-gray-900 dark:text-white">{queue?.in_progress ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Completed (1h)</span><span className="font-medium text-gray-900 dark:text-white">{queue?.completed_1h ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Failed (1h)</span><span className="font-medium text-red-600">{queue?.failed_1h ?? '—'}</span></div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">System Health</h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Health score</span><span className="font-medium text-gray-900 dark:text-white">{status?.health_score != null ? `${status.health_score}%` : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Scheduler</span><span className="font-medium text-gray-900 dark:text-white">{status?.scheduler?.is_running ? 'Running' : 'Stopped'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Sync interval</span><span className="font-medium text-gray-900 dark:text-white">{status?.scheduler?.interval_minutes != null ? `${status.scheduler.interval_minutes} min` : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Total emails</span><span className="font-medium text-gray-900 dark:text-white">{status?.database?.total_emails ?? '—'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Processing Logs</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th className="py-2 pr-4 font-medium">Time</th>
+              <th className="py-2 pr-4 font-medium">Event</th>
+              <th className="py-2 pr-4 font-medium">Detail</th>
+              <th className="py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(logs || []).map((log, idx) => (
+              <tr key={idx} className="border-b border-gray-100 dark:border-gray-700 last:border-0">
+                <td className="py-2 pr-4 text-gray-500">{log.time ? new Date(log.time).toLocaleTimeString() : '—'}</td>
+                <td className="py-2 pr-4 text-gray-900 dark:text-white">{log.event}</td>
+                <td className="py-2 pr-4 text-gray-500">{log.detail}</td>
+                <td className="py-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase ${log.status === 'success' ? 'bg-green-100 text-green-700' : log.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    {log.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {(!logs || logs.length === 0) && (
+              <tr><td colSpan={4} className="py-4 text-center text-gray-500">No processing logs yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500" /> Recent Errors
+        </h3>
+        {(!errors || errors.length === 0) ? (
+          <p className="text-sm text-gray-500">No recent errors.</p>
+        ) : (
+          <div className="space-y-3">
+            {errors.map((err, idx) => (
+              <div key={idx} className="flex items-start gap-3 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 pb-3 last:pb-0">
+                <span className="text-gray-500 w-16 flex-shrink-0">{err.time ? new Date(err.time).toLocaleTimeString() : '—'}</span>
+                <span className="font-medium text-gray-900 dark:text-white w-28 flex-shrink-0">{err.source}</span>
+                <span className="text-gray-500">{err.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -716,4 +716,45 @@ export const api = {
       throw e;
     }
   },
+
+  // ---------------------------------------------------------
+  // Categories & Priority
+  // ---------------------------------------------------------
+  getEmailsByCategory: async ({ category = 'All', search = '', sort = 'desc', skip = 0, limit = 50 }) => {
+    const response = await axiosClient.get('/categories', {
+      params: { category, search, sort, skip, limit }
+    });
+    return response;
+  },
+
+  getCategoryCounts: async () => {
+    const response = await axiosClient.get('/categories/counts');
+    return response;
+  },
+
+  // ---------------------------------------------------------
+  // Analytics / Business Insights
+  // ---------------------------------------------------------
+  getAnalyticsSummary: async (days = 7) => {
+    const response = await axiosClient.get('/analytics/summary', { params: { days } });
+    return response;
+  },
+
+  // ---------------------------------------------------------
+  // Monitoring (queue, logs, errors)
+  // ---------------------------------------------------------
+  getQueueStatus: async () => {
+    const response = await axiosClient.get('/system/queue');
+    return response;
+  },
+
+  getProcessingLogs: async (limit = 20) => {
+    const response = await axiosClient.get('/system/logs', { params: { limit } });
+    return response?.logs || [];
+  },
+
+  getRecentErrors: async (limit = 20) => {
+    const response = await axiosClient.get('/system/errors', { params: { limit } });
+    return response?.errors || [];
+  },
 };

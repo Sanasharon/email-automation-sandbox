@@ -12,6 +12,8 @@ import SystemConfig from './pages/SystemConfig';
 import Monitoring from './pages/Monitoring';
 import ApprovalQueue from './pages/ApprovalQueue';
 import Logs from './pages/Logs';
+import { Categories } from './pages/Categories';
+import { Analytics } from './pages/Analytics';
 import { AuthProvider } from './context/AuthContext';
 import { RefreshProvider } from './context/RefreshContext';
 import { MailboxProvider } from './context/MailboxContext';
@@ -38,6 +40,8 @@ function App() {
               <Route path="monitoring" element={<ErrorBoundary><EmailMonitoring /></ErrorBoundary>} />
               <Route path="automation" element={<ErrorBoundary><AutomationActivity /></ErrorBoundary>} />
               <Route path="approvals" element={<ErrorBoundary><ApprovalQueue /></ErrorBoundary>} />
+              <Route path="categories" element={<ErrorBoundary><Categories /></ErrorBoundary>} />
+              <Route path="analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
               
               {/* Administration Routes */}
               <Route path="users" element={<ErrorBoundary><Users /></ErrorBoundary>} />

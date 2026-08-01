@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveData } from '../../hooks/useLiveData';
 import { api } from '../../api/client';
@@ -7,6 +7,10 @@ import { ActivityTimeline } from '../../components/ActivityTimeline';
 import { LoadingSkeleton } from '../../components/LoadingSkeleton';
 import { Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useMailbox } from '../../context/MailboxContext';
+
+// Charts
+import { Bar, Pie, Line } from 'react-chartjs-2';
+import 'chart.js/auto';
 
 export const DashboardOverview = () => {
   const navigate = useNavigate();
@@ -24,6 +28,80 @@ export const DashboardOverview = () => {
     [isConnected],
     isConnected
   );
+
+  // Analytics state (Business Insights)
+  const [analyticsSummary, setAnalyticsSummary] = useState(null);
+  const [dailyTrends, setDailyTrends] = useState(null);
+  const [processingTimes, setProcessingTimes] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const analyticsIntervalRef = useRef(null);
+
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const [sRes, dRes, pRes] = await Promise.all([
+        fetch('/api/v1/analytics/summary', { credentials: 'include' }),
+        fetch('/api/v1/analytics/daily_trends?days=30', { credentials: 'include' }),
+        fetch('/api/v1/analytics/processing_times?days=30', { credentials: 'include' }),
+      ]);
+
+      if (sRes.ok) {
+        const sJson = await sRes.json();
+        setAnalyticsSummary(sJson);
+      } else {
+        console.warn('analytics/summary returned', sRes.status);
+      }
+
+      if (dRes.ok) {
+        const dJson = await dRes.json();
+        setDailyTrends(dJson);
+      } else {
+        console.warn('analytics/daily_trends returned', dRes.status);
+      }
+
+      if (pRes.ok) {
+        const pJson = await pRes.json();
+        setProcessingTimes(pJson);
+      } else {
+        console.warn('analytics/processing_times returned', pRes.status);
+      }
+    } catch (err) {
+      console.error('Failed to fetch analytics', err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Start polling analytics only when connected
+    if (isConnected) {
+      // initial fetch
+      fetchAnalytics();
+      // poll every 60s
+      analyticsIntervalRef.current = setInterval(fetchAnalytics, 60_000);
+    }
+
+    return () => {
+      if (analyticsIntervalRef.current) {
+        clearInterval(analyticsIntervalRef.current);
+        analyticsIntervalRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
+
+  // Prepare chart data safely
+  const categoryLabels = (analyticsSummary?.category_counts || []).map(c => c.category_name);
+  const categoryData = (analyticsSummary?.category_counts || []).map(c => c.count);
+
+  const priorityLabels = (analyticsSummary?.priority_counts || []).map(p => p.priority);
+  const priorityData = (analyticsSummary?.priority_counts || []).map(p => p.count);
+
+  const trendLabels = (dailyTrends?.data || []).map(d => d.day);
+  const trendValues = (dailyTrends?.data || []).map(d => d.count);
+
+  const avgProcessingSec = processingTimes?.avg_seconds;
+  const avgProcessingDisplay = avgProcessingSec ? `${Math.round(avgProcessingSec)}s` : 'N/A';
 
   return (
     <div className="flex flex-col gap-8">
@@ -68,15 +146,77 @@ export const DashboardOverview = () => {
         </section>
       )}
 
-      {/* Zero-state KPIs when disconnected */}
-      {!mailboxLoading && !isConnected && (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <KpiCard label="Total Workflows" value="0" />
-          <KpiCard label="Active Workflows" value="0" />
-          <KpiCard label="Emails Processed" value="0" />
-          <KpiCard label="Failed Executions" value="0" />
-          <KpiCard label="Pending Jobs" value="0" />
-          <KpiCard label="System Health" value="--" />
+      {/* Business Insights Section (analytics) */}
+      {isConnected && (
+        <section className="flat-card p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="font-headline-sm text-headline-sm text-on-surface">Business Insights</h2>
+            <div className="text-sm text-on-surface-variant">Updated every 60s</div>
+          </div>
+
+          {analyticsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {Array(4).fill(0).map((_, i) => <LoadingSkeleton key={i} type="card" />)}
+            </div>
+          ) : analyticsSummary ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <KpiCard label="Total Emails" value={(analyticsSummary.totals?.total_emails ?? 0).toLocaleString()} />
+                <KpiCard label="Processed" value={(analyticsSummary.totals?.processed_count ?? 0).toLocaleString()} />
+                <KpiCard label="Backlog" value={(analyticsSummary.totals?.processing_backlog ?? 0).toLocaleString()} />
+                <KpiCard label="Avg Processing" value={avgProcessingDisplay} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <h4 className="mb-2">Category counts</h4>
+                  <Bar
+                    data={{
+                      labels: categoryLabels,
+                      datasets: [{ label: 'Emails', data: categoryData, backgroundColor: 'rgba(54,162,235,0.8)' }]
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                    height={220}
+                  />
+                </div>
+
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <h4 className="mb-2">Priority distribution</h4>
+                  <Pie
+                    data={{
+                      labels: priorityLabels,
+                      datasets: [{ data: priorityData, backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#6b7280'] }]
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false }}
+                    height={220}
+                  />
+                </div>
+
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <h4 className="mb-2">Daily email trends (30 days)</h4>
+                  <Line
+                    data={{
+                      labels: trendLabels,
+                      datasets: [{ label: 'Received', data: trendValues, borderColor: 'rgba(75,192,192,1)', backgroundColor: 'rgba(75,192,192,0.08)', fill: true }]
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false }}
+                    height={220}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <h4 className="mb-2">Tasks & Monitoring</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <KpiCard label="Pending tasks" value={(analyticsSummary.task_summary?.pending_tasks ?? 0).toLocaleString()} />
+                  <KpiCard label="Failed (24h)" value={(analyticsSummary.task_summary?.failed_tasks_last_24h ?? 0).toLocaleString()} />
+                  <KpiCard label="Processing rate" value={`${((analyticsSummary.totals?.processed_count ?? 0) / Math.max(1, analyticsSummary.totals?.total_emails ?? 1) * 100).toFixed(1)}%`} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-on-surface-variant">Analytics data not available.</div>
+          )}
         </section>
       )}
 

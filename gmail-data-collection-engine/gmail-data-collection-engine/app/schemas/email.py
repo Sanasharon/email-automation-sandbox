@@ -1,6 +1,8 @@
+# app/schemas/email.py
 from pydantic import BaseModel, UUID4
 from typing import Optional, List
 from datetime import datetime
+from app.schemas.category import EmailCategoryResponse
 
 class EmailListItem(BaseModel):
     id: UUID4
@@ -15,12 +17,19 @@ class EmailListItem(BaseModel):
     retry_count: int = 0
     workflow_execution_id: Optional[str] = None
     last_processing_error: Optional[str] = None
-    
+
     workflow_name: Optional[str] = None
     last_action: Optional[str] = None
     workflow_status: Optional[str] = None
     processing_duration: Optional[float] = None
     has_attachments: bool = False
+
+    # NEW: priority fields
+    priority: Optional[str] = "Medium"
+    priority_confidence: Optional[float] = 0.0
+
+    # NEW: include category associations
+    categories: List[EmailCategoryResponse] = []
 
     class Config:
         from_attributes = True

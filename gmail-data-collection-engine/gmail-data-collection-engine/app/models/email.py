@@ -24,6 +24,9 @@ class Email(Base):
     has_attachments = Column(Boolean, nullable=False, server_default=text("false"))
     raw_email_json = Column(JSONB, nullable=True)
 
+    category = Column(String, nullable=True)
+    priority = Column(String, nullable=True)
+
     processing_status = Column(String, nullable=False, server_default="collected")
     last_processing_error = Column(String, nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
@@ -51,4 +54,5 @@ class Email(Base):
         CheckConstraint("processing_status IN ('collected', 'parsed', 'completed', 'failed')", name="ck_email_processing_status"),
         CheckConstraint("ai_processing_status IN ('not_started', 'pending', 'completed', 'failed')", name="ck_email_ai_processing_status"),
         CheckConstraint("record_status IN ('active', 'archived', 'deleted')", name="ck_email_record_status"),
+        CheckConstraint("priority IS NULL OR priority IN ('high', 'medium', 'low')", name="ck_email_priority"),
     )

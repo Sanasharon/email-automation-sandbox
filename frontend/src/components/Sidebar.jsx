@@ -31,7 +31,9 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
     { name: 'Workflows', path: '/workflows', icon: 'account_tree', roles: ['Admin', 'Editor', 'Viewer'] },
     { name: 'Approvals', path: '/approvals', icon: 'verified_user', roles: ['Admin', 'Editor', 'Viewer'] },
     { name: 'Email Monitoring', path: '/monitoring', icon: 'mail', roles: ['Admin', 'Editor', 'Viewer'] },
+    { name: 'Categories & Priority', path: '/categories', icon: 'label', roles: ['Admin', 'Editor', 'Viewer'] },
     { name: 'Automation', path: '/automation', icon: 'settings_suggest', roles: ['Admin', 'Editor', 'Viewer'] },
+    { name: 'Analytics', path: '/analytics', icon: 'insights', roles: ['Admin', 'Editor', 'Viewer'] },
   ];
 
   const adminNavItems = [

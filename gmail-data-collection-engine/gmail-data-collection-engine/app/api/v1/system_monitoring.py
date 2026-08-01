@@ -2,7 +2,7 @@
 System Monitoring API Router.
 Exposes comprehensive live monitoring metrics for APScheduler, database health, Gmail API, and mailbox status.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
 from app.db.session import get_db
@@ -91,4 +91,62 @@ def get_system_status(db: Session = Depends(get_db)):
             "last_failed_sync": last_failed_run.started_at.isoformat() if last_failed_run else None
         },
         "health_score": max(0.0, round(health_score, 1))
+    }
+
+
+@router.get("/queue", summary="Get live queue activity")
+def get_queue_activity(db: Session = Depends(get_db)):
+    """Queued/running/completed/failed sync run counts, used by the Monitoring page."""
+    from datetime import datetime, timedelta, timezone
+
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    queued = db.query(SyncRun).filter(SyncRun.status == "pending").count()
+    in_progress = db.query(SyncRun).filter(SyncRun.status == "running").count()
+    completed_1h = db.query(SyncRun).filter(
+        SyncRun.status == "completed", SyncRun.completed_at >= one_hour_ago
+    ).count()
+    failed_1h = db.query(SyncRun).filter(
+        SyncRun.status.in_(["failed", "partial_failure"]), SyncRun.started_at >= one_hour_ago
+    ).count()
+
+    return {
+        "queued": queued,
+        "in_progress": in_progress,
+        "completed_1h": completed_1h,
+        "failed_1h": failed_1h,
+    }
+
+
+@router.get("/logs", summary="Get recent processing logs")
+def get_processing_logs(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    """Recent sync runs presented as a processing log feed."""
+    runs = db.query(SyncRun).order_by(desc(SyncRun.started_at)).limit(limit).all()
+    status_map = {"completed": "success", "running": "pending", "pending": "pending", "failed": "failed", "partial_failure": "failed", "cancelled": "failed"}
+    return {
+        "logs": [
+            {
+                "time": run.started_at.isoformat() if run.started_at else None,
+                "event": f"{run.sync_type.capitalize()} sync",
+                "detail": f"{run.emails_processed} emails processed, {run.emails_failed} failed",
+                "status": status_map.get(run.status, "pending"),
+            }
+            for run in runs
+        ]
+    }
+
+
+@router.get("/errors", summary="Get recent sync errors")
+def get_recent_errors(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    """Recent unresolved sync errors."""
+    errors = db.query(SyncError).order_by(desc(SyncError.created_at)).limit(limit).all()
+    return {
+        "errors": [
+            {
+                "time": err.created_at.isoformat() if err.created_at else None,
+                "source": err.api_endpoint or err.error_type,
+                "message": err.error_message,
+            }
+            for err in errors
+        ]
     }
