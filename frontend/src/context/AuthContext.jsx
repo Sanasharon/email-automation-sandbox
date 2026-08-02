@@ -42,23 +42,26 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (credentials) => {
     try {
       setAuthError(null);
-      
-      // Primary call through standard API wrapper targeting /api/v1/auth/login
       const response = await api.login(credentials);
       const accessToken = response.access_token || response.token;
-      
+
       if (accessToken) {
         localStorage.setItem('token', accessToken);
         setToken(accessToken);
         axiosClient.defaults.headers.Authorization = `Bearer ${accessToken}`;
-        
+
         await verifyAuth();
         return { success: true };
       } else {
         throw new Error('No token returned from login');
       }
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || 'Login failed';
+      const detail = err?.response?.data?.detail;
+      // Safely handle Pydantic validation arrays (422) vs standard string errors
+      const msg = Array.isArray(detail)
+        ? detail.map(d => d.msg).join('; ')
+        : (detail || err?.message || 'Login failed');
+
       setAuthError(msg);
       return { success: false, error: msg };
     }

@@ -46,9 +46,18 @@ export function Categories() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {categories.map((c, idx) => (
-            <div key={c.id ?? c ?? idx} className="p-3 border rounded-lg bg-white dark:bg-gray-800">
-              <div className="text-sm font-medium">{c.name ?? c}</div>
-              {c.description ? <div className="text-xs text-gray-500 mt-1">{c.description}</div> : null}
+            <div
+              key={c.category ?? idx}
+              className="p-3 border rounded-lg bg-white dark:bg-gray-800"
+            >
+              <div className="text-sm font-medium">
+                {c.category ?? 'Unnamed category'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                {c.department && <span>{c.department}</span>}
+                {c.priority && <span>Priority: {c.priority}</span>}
+                {c.type && <span className="text-gray-400">({c.type})</span>}
+              </div>
             </div>
           ))}
         </div>
