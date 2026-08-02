@@ -233,6 +233,17 @@ def classify_email(email_id: str, db: Optional[Session] = None, assigned_by: Opt
                 "category_id": str(cat.id),
                 "confidence": confidence
             })
+
+        # Denormalize the highest-confidence category onto Email.category.
+        # analytics.py's live /analytics/summary endpoint reads this flat
+        # column directly (not the Category/EmailCategory join table), so
+        # without this, category counts would stay "Uncategorized" forever
+        # even though classification is running correctly.
+        if persisted:
+            top = max(persisted, key=lambda p: p["confidence"])
+            email.category = top["category"]
+            db.add(email)
+
         db.commit()
         return persisted
     except Exception:

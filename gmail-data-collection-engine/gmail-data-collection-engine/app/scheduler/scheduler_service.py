@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_MAX_INSTANCES
 from app.config import settings
-from app.scheduler.jobs import poll_mailboxes_job
+from app.scheduler.jobs import poll_mailboxes_job, ai_task_worker_job
 
 logger = logging.getLogger("scheduler_service")
 
@@ -72,6 +72,23 @@ class SchedulerService:
                 replace_existing=True
             )
             logger.info(f"[SCHEDULER_SERVICE] Registered job '{job_id}' every {settings.sync_interval_minutes} minute(s).")
+
+        # Register AI task queue worker — drains classification/priority
+        # tasks enqueued whenever a new email is saved. Runs far more
+        # frequently than the mailbox poll since it's a lightweight DB-only
+        # check unless there's actual work to do.
+        ai_job_id = "ai_task_queue_worker"
+        if not self.scheduler.get_job(ai_job_id):
+            self.scheduler.add_job(
+                ai_task_worker_job,
+                'interval',
+                seconds=settings.ai_task_worker_interval_seconds,
+                id=ai_job_id,
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True
+            )
+            logger.info(f"[SCHEDULER_SERVICE] Registered job '{ai_job_id}' every {settings.ai_task_worker_interval_seconds} second(s).")
 
         self.scheduler.start()
         logger.info("[SCHEDULER_SERVICE] APScheduler started successfully.")

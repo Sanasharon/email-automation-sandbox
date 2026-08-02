@@ -15,6 +15,10 @@ from app.models.email import Email
 from app.services.classification_service import classify_email as classify_email_sync
 from app.services.priority_service import classify_email_priority as classify_priority_sync
 
+# Task types that must both complete before an email is considered fully AI-processed.
+# Extend this if new per-email AI task types are added.
+EMAIL_TASK_TYPES = {"classification", "priority"}
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 10
@@ -42,7 +46,59 @@ def enqueue_task(
     db.commit()
     db.refresh(task)
     logger.info(f"[AI_TASK] Enqueued task {task.id} type={task.task_type} email_id={task.email_id}")
+
+    # Reflect the queued state on the email itself so analytics/monitoring
+    # can immediately show it as "pending" rather than "not_started".
+    if email_id and task_type in EMAIL_TASK_TYPES:
+        email = db.query(Email).filter(Email.id == email_id).one_or_none()
+        if email and email.ai_processing_status == "not_started":
+            email.ai_processing_status = "pending"
+            db.add(email)
+            db.commit()
+
     return task
+
+
+def _sync_email_ai_status(db: Session, email_id: str) -> None:
+    """
+    Recompute Email.ai_processing_status from the current state of its
+    classification/priority tasks:
+      - completed  -> all EMAIL_TASK_TYPES tasks completed
+      - failed     -> at least one EMAIL_TASK_TYPES task permanently failed
+                      and none are still pending/processing
+      - pending    -> otherwise, if any task exists
+    Leaves ai_processed_at set the first time the email reaches "completed".
+    """
+    if not email_id:
+        return
+    email = db.query(Email).filter(Email.id == email_id).one_or_none()
+    if not email:
+        return
+
+    tasks = (
+        db.query(AiTask)
+        .filter(AiTask.email_id == email_id, AiTask.task_type.in_(EMAIL_TASK_TYPES))
+        .all()
+    )
+    if not tasks:
+        return
+
+    statuses = {t.status for t in tasks}
+    if statuses <= {"completed"}:
+        new_status = "completed"
+    elif "pending" in statuses or "processing" in statuses:
+        new_status = "pending"
+    elif "failed" in statuses:
+        new_status = "failed"
+    else:
+        new_status = email.ai_processing_status
+
+    if new_status != email.ai_processing_status:
+        email.ai_processing_status = new_status
+        if new_status == "completed" and not email.ai_processed_at:
+            email.ai_processed_at = datetime.now(timezone.utc)
+        db.add(email)
+        db.commit()
 
 
 def fetch_pending_tasks(db: Session, limit: int = DEFAULT_BATCH_SIZE) -> List[AiTask]:
@@ -83,6 +139,8 @@ def mark_task_completed(db: Session, task: AiTask, result: Dict[str, Any]) -> Ai
     db.commit()
     db.refresh(task)
     logger.info(f"[AI_TASK] Task completed {task.id}")
+    if task.email_id:
+        _sync_email_ai_status(db, str(task.email_id))
     return task
 
 
@@ -98,6 +156,8 @@ def mark_task_failed(db: Session, task: AiTask, error: str) -> AiTask:
     db.commit()
     db.refresh(task)
     logger.warning(f"[AI_TASK] Task {task.id} marked {task.status}. Error: {task.error}")
+    if task.status == "failed" and task.email_id:
+        _sync_email_ai_status(db, str(task.email_id))
     return task
 
 

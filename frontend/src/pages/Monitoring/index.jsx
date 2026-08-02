@@ -141,7 +141,7 @@ const Monitoring = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Queue Activity</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Gmail Sync Queue</h3>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-gray-500">Queued jobs</span><span className="font-medium text-gray-900 dark:text-white">{queue?.queued ?? '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">In progress</span><span className="font-medium text-gray-900 dark:text-white">{queue?.in_progress ?? '—'}</span></div>
@@ -150,6 +150,19 @@ const Monitoring = () => {
           </div>
         </div>
 
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">AI Task Queue</h3>
+          <p className="text-xs text-gray-400 -mt-2 mb-3">Classification &amp; priority scoring</p>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Pending</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.pending ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Processing</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.processing ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Completed (1h)</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.completed_1h ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Failed (1h)</span><span className="font-medium text-red-600">{queue?.ai_task_queue?.failed_1h ?? '—'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">System Health</h3>
           <div className="space-y-3 text-sm">

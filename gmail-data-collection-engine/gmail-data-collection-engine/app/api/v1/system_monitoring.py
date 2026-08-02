@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
 from app.db.session import get_db
 from app.models import MailboxAccount, SyncRun, Email, SyncError
+from app.models.ai_task import AiTask
 from app.scheduler.scheduler_service import scheduler_service
 from app.config import settings
 import os
@@ -110,11 +111,30 @@ def get_queue_activity(db: Session = Depends(get_db)):
         SyncRun.status.in_(["failed", "partial_failure"]), SyncRun.started_at >= one_hour_ago
     ).count()
 
+    # AI task queue (classification + priority jobs), separate from Gmail
+    # sync runs above — this is the queue that powers categorization and
+    # prioritization, so it needs its own visibility rather than being
+    # folded into (or hidden behind) sync run stats.
+    ai_pending = db.query(AiTask).filter(AiTask.status == "pending").count()
+    ai_processing = db.query(AiTask).filter(AiTask.status == "processing").count()
+    ai_completed_1h = db.query(AiTask).filter(
+        AiTask.status == "completed", AiTask.completed_at >= one_hour_ago
+    ).count()
+    ai_failed_1h = db.query(AiTask).filter(
+        AiTask.status == "failed", AiTask.updated_at >= one_hour_ago
+    ).count()
+
     return {
         "queued": queued,
         "in_progress": in_progress,
         "completed_1h": completed_1h,
         "failed_1h": failed_1h,
+        "ai_task_queue": {
+            "pending": ai_pending,
+            "processing": ai_processing,
+            "completed_1h": ai_completed_1h,
+            "failed_1h": ai_failed_1h,
+        },
     }
 
 

@@ -40,7 +40,10 @@ def get_analytics_summary(
 
     priority_rows = base.with_entities(Email.priority, func.count(Email.id)).group_by(Email.priority).all()
     priority_counts = {(p or "unset"): count for p, count in priority_rows}
-    high_count = priority_counts.get("high", 0)
+    # priority_service.py always returns Title-case values ("High"/"Medium"/"Low"),
+    # so this must match that casing — comparing against lowercase "high" here
+    # previously meant high_priority_pct was always 0 regardless of real data.
+    high_count = priority_counts.get("High", 0)
     high_priority_pct = round((high_count / total_emails) * 100, 1) if total_emails else 0.0
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -53,18 +56,23 @@ def get_analytics_summary(
     )
     daily_trend = [{"date": day.isoformat(), "count": count} for day, count in trend_rows]
 
+    # NOTE: Email.processed_at is never set anywhere in this codebase (it's a
+    # placeholder for a future generic ingestion-pipeline stage). The AI
+    # classification/priority pipeline actually populates ai_processed_at,
+    # so processing-time analytics must be computed from that field instead
+    # — using processed_at here silently returned None/[] forever.
     avg_seconds = (
-        base.filter(Email.processed_at != None)
-        .with_entities(func.avg(func.extract("epoch", Email.processed_at - Email.created_at)))
+        base.filter(Email.ai_processed_at != None)
+        .with_entities(func.avg(func.extract("epoch", Email.ai_processed_at - Email.created_at)))
         .scalar()
     )
     avg_processing_time_seconds = round(float(avg_seconds), 1) if avg_seconds else None
 
     processing_trend_rows = (
-        base.filter(Email.processed_at != None, Email.processed_at >= since)
+        base.filter(Email.ai_processed_at != None, Email.ai_processed_at >= since)
         .with_entities(
-            cast(Email.processed_at, Date).label("day"),
-            func.avg(func.extract("epoch", Email.processed_at - Email.created_at)),
+            cast(Email.ai_processed_at, Date).label("day"),
+            func.avg(func.extract("epoch", Email.ai_processed_at - Email.created_at)),
         )
         .group_by("day")
         .order_by("day")

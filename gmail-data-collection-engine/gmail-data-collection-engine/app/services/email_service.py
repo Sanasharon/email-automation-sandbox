@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models import Email
 from app.utils.sanitize_gmail_payload import sanitize_gmail_payload
+from app.services.ai_task_service import enqueue_task
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,20 @@ class EmailService:
         try:
             self.db.add(email)
             self.db.commit()
+            self.db.refresh(email)
             logger.info(f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} for mailbox {mailbox_account_id}")
+
+            # Queue this email for AI classification + priority scoring.
+            # These run asynchronously via the ai_task_worker scheduled job,
+            # so saving an email never blocks on an AI provider call.
+            try:
+                enqueue_task(self.db, task_type="classification", email_id=str(email.id))
+                enqueue_task(self.db, task_type="priority", email_id=str(email.id))
+            except Exception as enqueue_err:
+                # Never fail the email save because task enqueueing failed —
+                # log it so it's visible in monitoring, but the email is safely stored.
+                logger.error(f"[AI_TASK_ENQUEUE_FAILED] email={email.id}: {enqueue_err}")
+
             return True, email
         except Exception as e:
             self.db.rollback()

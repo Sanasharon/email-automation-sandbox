@@ -10,6 +10,8 @@ from app.providers.gmail_provider import GmailProvider
 from app.services.sync_orchestrator import SyncOrchestrator
 from app.services.workflow_execution_service import WorkflowExecutionService
 from app.services.system_logger import log_scheduler_event, log_sync_event
+from app.services.ai_task_service import process_pending_tasks
+from app.config import settings
 
 from app.auth.gmail_oauth import NonInteractiveAuthRequired
 
@@ -74,3 +76,25 @@ def poll_mailboxes_job():
     finally:
         db.close()
         logger.info("[SCHEDULER_JOB] Scheduled incremental mailbox poll completed.")
+
+
+def ai_task_worker_job():
+    """
+    Background job triggered by APScheduler on a short interval
+    (settings.ai_task_worker_interval_seconds, default 60s).
+
+    Drains pending rows from ai_tasks (classification + priority jobs
+    enqueued by EmailService.save_email) so newly synced emails actually
+    get categorized and prioritized instead of sitting in the queue forever.
+    """
+    db = SessionLocal()
+    try:
+        processed = process_pending_tasks(db, batch_size=settings.ai_task_worker_batch_size)
+        if processed:
+            logger.info(f"[AI_TASK_WORKER] Processed {processed} AI task(s) this run.")
+            log_scheduler_event("info", f"AI task worker processed {processed} task(s)", {"processed": processed})
+    except Exception as e:
+        logger.error(f"[AI_TASK_WORKER] Exception while processing AI task queue: {e}")
+        log_scheduler_event("error", f"AI task worker failed: {str(e)}")
+    finally:
+        db.close()

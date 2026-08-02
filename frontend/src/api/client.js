@@ -116,6 +116,11 @@ export const api = {
     return validateArray(response.data || response, 'Recent Activity');
   },
 
+  getAnalyticsSummary: async (days = 7) => {
+    const response = await axiosClient.get('/analytics/summary', { params: { days } });
+    return validateObject(response, 'Analytics Summary');
+  },
+
   // ---------------------------------------------------------
   // Workflows
   // ---------------------------------------------------------
@@ -390,6 +395,24 @@ getMailboxes: async () => {
   getSystemStatus: async () => {
     const response = await axiosClient.get('/system/status');
     return response || {};
+  },
+
+  // These three were called by the Monitoring page but never defined here —
+  // that's why Queue Activity / Processing Logs / Recent Errors always
+  // showed placeholder dashes regardless of real backend state.
+  getQueueStatus: async () => {
+    const response = await axiosClient.get('/system/queue');
+    return response || {};
+  },
+
+  getProcessingLogs: async (limit = 20) => {
+    const response = await axiosClient.get('/system/logs', { params: { limit } });
+    return response?.logs || [];
+  },
+
+  getRecentErrors: async (limit = 20) => {
+    const response = await axiosClient.get('/system/errors', { params: { limit } });
+    return response?.errors || [];
   },
 
   getCurrentTask: async () => {

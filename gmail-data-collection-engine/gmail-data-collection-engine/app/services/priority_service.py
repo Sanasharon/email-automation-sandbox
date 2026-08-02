@@ -124,11 +124,14 @@ def _heuristic_priority(text: str, sender_email: Optional[str] = None) -> Dict[s
         if k in text_low:
             score_low += 1
 
-    # sender importance heuristic (if sender_email is provided, treat some domains as higher importance)
-    vip_domains = ["ceo@", "ceo.", "@boss", "@important"]  # placeholder; ideally configure system setting
+    # Sender importance heuristic: treat common executive-role local-parts as
+    # higher importance. This is a coarse signal — for real accuracy this
+    # should eventually read from a configurable VIP sender/domain list
+    # instead of hardcoded keywords.
+    VIP_SENDER_MARKERS = ["ceo", "founder", "cto", "cfo", "coo", "vp", "president", "director"]
     if sender_email:
-        s = sender_email.lower()
-        if any(v in s for v in ["@ceo", "@ceo.", "@ceo@", "@founder", "@cto", "@cfo", "@vp."]):
+        local_part = sender_email.lower().split("@")[0]
+        if any(marker in local_part for marker in VIP_SENDER_MARKERS):
             score_high += 2
 
     # decide
@@ -141,7 +144,7 @@ def _heuristic_priority(text: str, sender_email: Optional[str] = None) -> Dict[s
     # default
     return {"priority": "Medium", "confidence": 0.45}
 
-def classify_text_priority(text: str, db: Optional[Session] = None) -> Dict[str, Any]:
+def classify_text_priority(text: str, db: Optional[Session] = None, sender_email: Optional[str] = None) -> Dict[str, Any]:
     """Return predicted priority and confidence for an arbitrary text (no persistence)."""
     close_db = False
     if db is None:
@@ -159,8 +162,9 @@ def classify_text_priority(text: str, db: Optional[Session] = None) -> Dict[str,
                 return {"priority": pr, "confidence": conf}
         except Exception:
             logger.exception("AI priority classification failed, falling back to heuristics")
-        # fallback heuristic
-        return _heuristic_priority(text)
+        # fallback heuristic — sender_email must be threaded through so the
+        # VIP-sender boost actually has a chance to fire.
+        return _heuristic_priority(text, sender_email=sender_email)
     finally:
         if close_db:
             db.close()
@@ -183,7 +187,7 @@ def classify_email_priority(email_id: str, db: Optional[Session] = None, persist
         if email.snippet:
             parts.append(email.snippet)
         content = "\n\n".join(parts)
-        result = classify_text_priority(content, db=db)
+        result = classify_text_priority(content, db=db, sender_email=email.sender_email)
         # Persist if requested
         if persist:
             # update fields

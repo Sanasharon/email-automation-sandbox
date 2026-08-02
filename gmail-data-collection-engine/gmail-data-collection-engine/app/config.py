@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     enable_scheduler: bool = False
     scheduler_enabled: bool = False
     sync_interval_minutes: int = 10
+    ai_task_worker_interval_seconds: int = 60
+    ai_task_worker_batch_size: int = 10
     scheduler_timezone: str = "UTC"
     max_sync_instances: int = 1
     sync_misfire_grace_seconds: int = 300
