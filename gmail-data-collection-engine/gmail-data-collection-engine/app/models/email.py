@@ -53,6 +53,8 @@ class Email(Base):
 
     mailbox_account = relationship("MailboxAccount", back_populates="emails")
     attachments = relationship("Attachment", back_populates="email", passive_deletes=True)
+    ai_tasks = relationship("AiTask", back_populates="email", passive_deletes=True)
+    category_associations = relationship("EmailCategory", back_populates="email", passive_deletes=True)
 
     __table_args__ = (
         Index('uq_email_account_provider_msg_id', 'mailbox_account_id', 'provider_message_id', unique=True),
@@ -60,7 +62,6 @@ class Email(Base):
         Index('ix_email_account_thread_id', 'mailbox_account_id', 'provider_thread_id'),
         Index('ix_email_account_processing_status', 'mailbox_account_id', 'processing_status'),
         Index('ix_email_account_record_status', 'mailbox_account_id', 'record_status'),
-        # Indexes to speed queries that filter by category/priority per mailbox
         Index('ix_email_account_category', 'mailbox_account_id', 'category'),
         Index('ix_email_account_priority', 'mailbox_account_id', 'priority'),
         CheckConstraint("processing_status IN ('collected', 'parsed', 'completed', 'failed')", name="ck_email_processing_status"),

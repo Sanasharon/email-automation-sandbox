@@ -39,7 +39,7 @@ app.add_middleware(RateLimitMiddleware)
 # --- Core API routers ---
 app.include_router(health.router)
 app.include_router(auth.router)
-app.include_router(mailboxes.router)
+app.include_router(mailboxes.router, prefix="/api/v1")
 app.include_router(sync.router)
 app.include_router(emails.router)
 

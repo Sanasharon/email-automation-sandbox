@@ -1,0 +1,757 @@
+From 9c848e17b622d7285f40bdf58fdfe6d3d9a5962e Mon Sep 17 00:00:00 2001
+From: "Claude (sandbox)" <assistant@anthropic-sandbox.local>
+Date: Sun, 2 Aug 2026 14:34:47 +0000
+Subject: [PATCH] Wire AI task queue end-to-end: auto-enqueue
+ classification/priority on ingestion, run queue worker, fix analytics field
+ mismatches, rebuild Analytics dashboard, add AI queue monitoring
+
+---
+ frontend/src/api/client.js                    |  23 ++
+ frontend/src/pages/Analytics/index.jsx        | 224 +++++++++++++++---
+ frontend/src/pages/Monitoring/index.jsx       |  15 +-
+ .../app/api/v1/analytics.py                   |  20 +-
+ .../app/api/v1/system_monitoring.py           |  20 ++
+ .../app/config.py                             |   2 +
+ .../app/scheduler/jobs.py                     |  24 ++
+ .../app/scheduler/scheduler_service.py        |  19 +-
+ .../app/services/ai_task_service.py           |  60 +++++
+ .../app/services/classification_service.py    |  11 +
+ .../app/services/email_service.py             |  14 ++
+ .../app/services/priority_service.py          |  20 +-
+ 12 files changed, 398 insertions(+), 54 deletions(-)
+
+diff --git a/frontend/src/api/client.js b/frontend/src/api/client.js
+index 52c2933..3a5298e 100644
+--- a/frontend/src/api/client.js
++++ b/frontend/src/api/client.js
+@@ -116,6 +116,11 @@ export const api = {
+     return validateArray(response.data || response, 'Recent Activity');
+   },
+ 
++  getAnalyticsSummary: async (days = 7) => {
++    const response = await axiosClient.get('/analytics/summary', { params: { days } });
++    return validateObject(response, 'Analytics Summary');
++  },
++
+   // ---------------------------------------------------------
+   // Workflows
+   // ---------------------------------------------------------
+@@ -392,6 +397,24 @@ getMailboxes: async () => {
+     return response || {};
+   },
+ 
++  // These three were called by the Monitoring page but never defined here —
++  // that's why Queue Activity / Processing Logs / Recent Errors always
++  // showed placeholder dashes regardless of real backend state.
++  getQueueStatus: async () => {
++    const response = await axiosClient.get('/system/queue');
++    return response || {};
++  },
++
++  getProcessingLogs: async (limit = 20) => {
++    const response = await axiosClient.get('/system/logs', { params: { limit } });
++    return response?.logs || [];
++  },
++
++  getRecentErrors: async (limit = 20) => {
++    const response = await axiosClient.get('/system/errors', { params: { limit } });
++    return response?.errors || [];
++  },
++
+   getCurrentTask: async () => {
+     if (USE_MOCK_DATA) {
+       return {
+diff --git a/frontend/src/pages/Analytics/index.jsx b/frontend/src/pages/Analytics/index.jsx
+index e470f2c..00cbe57 100644
+--- a/frontend/src/pages/Analytics/index.jsx
++++ b/frontend/src/pages/Analytics/index.jsx
+@@ -1,29 +1,81 @@
+ // frontend/src/pages/Analytics/index.jsx
+ import React, { useEffect, useState } from 'react';
+ import { api } from '../../api/client';
+-import { Bar } from 'react-chartjs-2';
+-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
+-import { Activity } from 'lucide-react';
++import { Bar, Doughnut, Line } from 'react-chartjs-2';
++import {
++  Chart as ChartJS,
++  CategoryScale,
++  LinearScale,
++  BarElement,
++  ArcElement,
++  LineElement,
++  PointElement,
++  Tooltip,
++  Legend,
++} from 'chart.js';
++import { BarChart3, Clock, AlertCircle, Tag, RefreshCw } from 'lucide-react';
+ 
+-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
++ChartJS.register(
++  CategoryScale,
++  LinearScale,
++  BarElement,
++  ArcElement,
++  LineElement,
++  PointElement,
++  Tooltip,
++  Legend
++);
++
++const PRIORITY_COLORS = {
++  High: '#ef4444',
++  Medium: '#f59e0b',
++  Low: '#22c55e',
++  unset: '#9ca3af',
++};
++
++const CATEGORY_PALETTE = [
++  '#2563eb', '#7c3aed', '#0891b2', '#d97706', '#dc2626', '#16a34a', '#db2777',
++];
++
++function KpiCard({ icon: Icon, label, value, hint }) {
++  return (
++    <div className="p-4 border rounded-xl bg-white dark:bg-gray-800 dark:border-gray-700">
++      <div className="flex items-center justify-between">
++        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</div>
++        <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
++      </div>
++      <div className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
++      {hint ? <div className="mt-1 text-xs text-gray-400">{hint}</div> : null}
++    </div>
++  );
++}
++
++function formatSeconds(seconds) {
++  if (seconds === null || seconds === undefined) return '—';
++  if (seconds < 60) return `${Math.round(seconds)}s`;
++  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
++  return `${(seconds / 3600).toFixed(1)}h`;
++}
+ 
+ export function Analytics() {
+   const [summary, setSummary] = useState(null);
+-  const [recent, setRecent] = useState([]);
+   const [loading, setLoading] = useState(true);
++  const [error, setError] = useState(null);
++  const [days, setDays] = useState(7);
+ 
+   useEffect(() => {
+     let mounted = true;
+     async function load() {
+       setLoading(true);
++      setError(null);
+       try {
+-        const s = await api.getDashboardSummary();
+-        const r = await api.getRecentActivity();
++        const s = await api.getAnalyticsSummary(days);
+         if (!mounted) return;
+         setSummary(s || {});
+-        setRecent(Array.isArray(r) ? r : []);
+       } catch (e) {
++        if (!mounted) return;
+         console.error('Failed to load analytics', e);
++        setError(e?.response?.data?.detail || e?.message || 'Failed to load analytics');
+       } finally {
+         if (!mounted) return;
+         setLoading(false);
+@@ -31,51 +83,147 @@ export function Analytics() {
+     }
+     load();
+     return () => { mounted = false; };
+-  }, []);
++  }, [days]);
++
++  const categoryEntries = Object.entries(summary?.category_counts || {});
++  const priorityEntries = Object.entries(summary?.priority_counts || {});
++  const dailyTrend = summary?.daily_trend || [];
++
++  const categoryChart = {
++    labels: categoryEntries.map(([name]) => name),
++    datasets: [{
++      label: 'Emails',
++      data: categoryEntries.map(([, count]) => count),
++      backgroundColor: categoryEntries.map((_, i) => CATEGORY_PALETTE[i % CATEGORY_PALETTE.length]),
++      borderRadius: 6,
++    }],
++  };
+ 
+-  const chartData = {
+-    labels: recent.map((a, i) => a.label ?? `Item ${i+1}`),
++  const priorityChart = {
++    labels: priorityEntries.map(([name]) => name),
+     datasets: [{
+-      label: 'Recent activity',
+-      data: recent.map(a => a.value ?? 0),
+-      backgroundColor: 'rgba(59,130,246,0.6)'
+-    }]
++      data: priorityEntries.map(([, count]) => count),
++      backgroundColor: priorityEntries.map(([name]) => PRIORITY_COLORS[name] || '#9ca3af'),
++      borderWidth: 0,
++    }],
++  };
++
++  const trendChart = {
++    labels: dailyTrend.map((d) => d.date),
++    datasets: [{
++      label: 'Emails received',
++      data: dailyTrend.map((d) => d.count),
++      borderColor: '#2563eb',
++      backgroundColor: 'rgba(37,99,235,0.1)',
++      tension: 0.3,
++      fill: true,
++      pointRadius: 3,
++    }],
++  };
++
++  const chartOptions = {
++    responsive: true,
++    plugins: { legend: { display: false } },
++    scales: {
++      x: { grid: { display: false } },
++      y: { beginAtZero: true, ticks: { precision: 0 } },
++    },
+   };
+ 
+   return (
+-    <div className="p-4">
+-      <div className="flex items-center gap-3 mb-4">
+-        <Activity className="w-6 h-6 text-gray-700" />
+-        <h1 className="text-2xl font-semibold">Analytics</h1>
++    <div className="p-4 space-y-6">
++      <div className="flex items-center justify-between flex-wrap gap-3">
++        <div className="flex items-center gap-3">
++          <BarChart3 className="w-6 h-6 text-gray-700 dark:text-gray-300" />
++          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Business Insights</h1>
++        </div>
++        <div className="flex items-center gap-2">
++          {[7, 14, 30, 90].map((d) => (
++            <button
++              key={d}
++              onClick={() => setDays(d)}
++              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
++                days === d
++                  ? 'bg-blue-600 text-white border-blue-600'
++                  : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
++              }`}
++            >
++              {d}d
++            </button>
++          ))}
++        </div>
+       </div>
+ 
++      {error ? (
++        <div className="rounded-lg bg-red-50 p-4 border border-red-200 dark:bg-red-900/30 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
++          {error}
++        </div>
++      ) : null}
++
+       {loading ? (
+         <div className="text-sm text-gray-500">Loading analytics...</div>
+       ) : (
+         <>
+-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+-            <div className="p-4 border rounded-lg bg-white dark:bg-gray-800">
+-              <div className="text-xs text-gray-500">Total Workflows</div>
+-              <div className="text-2xl font-bold">{summary?.total_workflows ?? '—'}</div>
+-            </div>
+-            <div className="p-4 border rounded-lg bg-white dark:bg-gray-800">
+-              <div className="text-xs text-gray-500">Active Workflows</div>
+-              <div className="text-2xl font-bold">{summary?.active_workflows ?? '—'}</div>
++          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
++            <KpiCard
++              icon={BarChart3}
++              label="Emails Processed"
++              value={summary?.emails_processed ?? 0}
++              hint={`last ${days} days`}
++            />
++            <KpiCard
++              icon={Clock}
++              label="Avg Processing Time"
++              value={formatSeconds(summary?.avg_processing_time_seconds)}
++              hint="classification + priority"
++            />
++            <KpiCard
++              icon={AlertCircle}
++              label="High Priority"
++              value={`${summary?.high_priority_pct ?? 0}%`}
++              hint="of processed emails"
++            />
++            <KpiCard
++              icon={Tag}
++              label="Categories Tracked"
++              value={summary?.categories_tracked ?? 0}
++              hint="distinct categories seen"
++            />
++          </div>
++
++          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
++            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border dark:border-gray-700">
++              <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Emails by Category</h3>
++              {categoryEntries.length === 0 ? (
++                <div className="text-sm text-gray-500 py-8 text-center">
++                  No categorized emails yet — this fills in as the AI classification queue processes new emails.
++                </div>
++              ) : (
++                <Bar data={categoryChart} options={chartOptions} />
++              )}
+             </div>
+-            <div className="p-4 border rounded-lg bg-white dark:bg-gray-800">
+-              <div className="text-xs text-gray-500">Errors</div>
+-              <div className="text-2xl font-bold">{summary?.errors ?? '—'}</div>
++
++            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border dark:border-gray-700">
++              <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Priority Breakdown</h3>
++              {priorityEntries.length === 0 ? (
++                <div className="text-sm text-gray-500 py-8 text-center">No priority data yet.</div>
++              ) : (
++                <div className="max-w-xs mx-auto">
++                  <Doughnut data={priorityChart} options={{ plugins: { legend: { position: 'bottom' } } }} />
++                </div>
++              )}
+             </div>
+           </div>
+ 
+-          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border">
+-            <h3 className="font-semibold mb-3">Recent Activity</h3>
+-            {recent.length === 0 ? (
+-              <div className="text-sm text-gray-500">No recent activity.</div>
++          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border dark:border-gray-700">
++            <div className="flex items-center justify-between mb-3">
++              <h3 className="font-semibold text-gray-900 dark:text-white">Daily Email Volume</h3>
++              <RefreshCw className="h-4 w-4 text-gray-400" />
++            </div>
++            {dailyTrend.length === 0 ? (
++              <div className="text-sm text-gray-500 py-8 text-center">No emails received in this window.</div>
+             ) : (
+-              <div className="max-w-2xl">
+-                <Bar data={chartData} />
+-              </div>
++              <Line data={trendChart} options={chartOptions} />
+             )}
+           </div>
+         </>
+@@ -84,4 +232,4 @@ export function Analytics() {
+   );
+ }
+ 
+-export default Analytics;
+\ No newline at end of file
++export default Analytics;
+diff --git a/frontend/src/pages/Monitoring/index.jsx b/frontend/src/pages/Monitoring/index.jsx
+index 4ed8f2c..b704166 100644
+--- a/frontend/src/pages/Monitoring/index.jsx
++++ b/frontend/src/pages/Monitoring/index.jsx
+@@ -141,7 +141,7 @@ const Monitoring = () => {
+ 
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Queue Activity</h3>
++          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Gmail Sync Queue</h3>
+           <div className="space-y-3 text-sm">
+             <div className="flex justify-between"><span className="text-gray-500">Queued jobs</span><span className="font-medium text-gray-900 dark:text-white">{queue?.queued ?? '—'}</span></div>
+             <div className="flex justify-between"><span className="text-gray-500">In progress</span><span className="font-medium text-gray-900 dark:text-white">{queue?.in_progress ?? '—'}</span></div>
+@@ -150,6 +150,19 @@ const Monitoring = () => {
+           </div>
+         </div>
+ 
++        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
++          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">AI Task Queue</h3>
++          <p className="text-xs text-gray-400 -mt-2 mb-3">Classification &amp; priority scoring</p>
++          <div className="space-y-3 text-sm">
++            <div className="flex justify-between"><span className="text-gray-500">Pending</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.pending ?? '—'}</span></div>
++            <div className="flex justify-between"><span className="text-gray-500">Processing</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.processing ?? '—'}</span></div>
++            <div className="flex justify-between"><span className="text-gray-500">Completed (1h)</span><span className="font-medium text-gray-900 dark:text-white">{queue?.ai_task_queue?.completed_1h ?? '—'}</span></div>
++            <div className="flex justify-between"><span className="text-gray-500">Failed (1h)</span><span className="font-medium text-red-600">{queue?.ai_task_queue?.failed_1h ?? '—'}</span></div>
++          </div>
++        </div>
++      </div>
++
++      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">System Health</h3>
+           <div className="space-y-3 text-sm">
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/analytics.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/analytics.py
+index 8ceaf61..11027aa 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/analytics.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/analytics.py
+@@ -40,7 +40,10 @@ def get_analytics_summary(
+ 
+     priority_rows = base.with_entities(Email.priority, func.count(Email.id)).group_by(Email.priority).all()
+     priority_counts = {(p or "unset"): count for p, count in priority_rows}
+-    high_count = priority_counts.get("high", 0)
++    # priority_service.py always returns Title-case values ("High"/"Medium"/"Low"),
++    # so this must match that casing — comparing against lowercase "high" here
++    # previously meant high_priority_pct was always 0 regardless of real data.
++    high_count = priority_counts.get("High", 0)
+     high_priority_pct = round((high_count / total_emails) * 100, 1) if total_emails else 0.0
+ 
+     since = datetime.now(timezone.utc) - timedelta(days=days)
+@@ -53,18 +56,23 @@ def get_analytics_summary(
+     )
+     daily_trend = [{"date": day.isoformat(), "count": count} for day, count in trend_rows]
+ 
++    # NOTE: Email.processed_at is never set anywhere in this codebase (it's a
++    # placeholder for a future generic ingestion-pipeline stage). The AI
++    # classification/priority pipeline actually populates ai_processed_at,
++    # so processing-time analytics must be computed from that field instead
++    # — using processed_at here silently returned None/[] forever.
+     avg_seconds = (
+-        base.filter(Email.processed_at != None)
+-        .with_entities(func.avg(func.extract("epoch", Email.processed_at - Email.created_at)))
++        base.filter(Email.ai_processed_at != None)
++        .with_entities(func.avg(func.extract("epoch", Email.ai_processed_at - Email.created_at)))
+         .scalar()
+     )
+     avg_processing_time_seconds = round(float(avg_seconds), 1) if avg_seconds else None
+ 
+     processing_trend_rows = (
+-        base.filter(Email.processed_at != None, Email.processed_at >= since)
++        base.filter(Email.ai_processed_at != None, Email.ai_processed_at >= since)
+         .with_entities(
+-            cast(Email.processed_at, Date).label("day"),
+-            func.avg(func.extract("epoch", Email.processed_at - Email.created_at)),
++            cast(Email.ai_processed_at, Date).label("day"),
++            func.avg(func.extract("epoch", Email.ai_processed_at - Email.created_at)),
+         )
+         .group_by("day")
+         .order_by("day")
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/system_monitoring.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/system_monitoring.py
+index 0f63fca..0eded3d 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/system_monitoring.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/api/v1/system_monitoring.py
+@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
+ from sqlalchemy import text, desc
+ from app.db.session import get_db
+ from app.models import MailboxAccount, SyncRun, Email, SyncError
++from app.models.ai_task import AiTask
+ from app.scheduler.scheduler_service import scheduler_service
+ from app.config import settings
+ import os
+@@ -110,11 +111,30 @@ def get_queue_activity(db: Session = Depends(get_db)):
+         SyncRun.status.in_(["failed", "partial_failure"]), SyncRun.started_at >= one_hour_ago
+     ).count()
+ 
++    # AI task queue (classification + priority jobs), separate from Gmail
++    # sync runs above — this is the queue that powers categorization and
++    # prioritization, so it needs its own visibility rather than being
++    # folded into (or hidden behind) sync run stats.
++    ai_pending = db.query(AiTask).filter(AiTask.status == "pending").count()
++    ai_processing = db.query(AiTask).filter(AiTask.status == "processing").count()
++    ai_completed_1h = db.query(AiTask).filter(
++        AiTask.status == "completed", AiTask.completed_at >= one_hour_ago
++    ).count()
++    ai_failed_1h = db.query(AiTask).filter(
++        AiTask.status == "failed", AiTask.updated_at >= one_hour_ago
++    ).count()
++
+     return {
+         "queued": queued,
+         "in_progress": in_progress,
+         "completed_1h": completed_1h,
+         "failed_1h": failed_1h,
++        "ai_task_queue": {
++            "pending": ai_pending,
++            "processing": ai_processing,
++            "completed_1h": ai_completed_1h,
++            "failed_1h": ai_failed_1h,
++        },
+     }
+ 
+ 
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/config.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/config.py
+index 8b15853..1e5ad9f 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/config.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/config.py
+@@ -21,6 +21,8 @@ class Settings(BaseSettings):
+     enable_scheduler: bool = False
+     scheduler_enabled: bool = False
+     sync_interval_minutes: int = 10
++    ai_task_worker_interval_seconds: int = 60
++    ai_task_worker_batch_size: int = 10
+     scheduler_timezone: str = "UTC"
+     max_sync_instances: int = 1
+     sync_misfire_grace_seconds: int = 300
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/jobs.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/jobs.py
+index f1e5b31..89146fb 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/jobs.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/jobs.py
+@@ -10,6 +10,8 @@ from app.providers.gmail_provider import GmailProvider
+ from app.services.sync_orchestrator import SyncOrchestrator
+ from app.services.workflow_execution_service import WorkflowExecutionService
+ from app.services.system_logger import log_scheduler_event, log_sync_event
++from app.services.ai_task_service import process_pending_tasks
++from app.config import settings
+ 
+ from app.auth.gmail_oauth import NonInteractiveAuthRequired
+ 
+@@ -74,3 +76,25 @@ def poll_mailboxes_job():
+     finally:
+         db.close()
+         logger.info("[SCHEDULER_JOB] Scheduled incremental mailbox poll completed.")
++
++
++def ai_task_worker_job():
++    """
++    Background job triggered by APScheduler on a short interval
++    (settings.ai_task_worker_interval_seconds, default 60s).
++
++    Drains pending rows from ai_tasks (classification + priority jobs
++    enqueued by EmailService.save_email) so newly synced emails actually
++    get categorized and prioritized instead of sitting in the queue forever.
++    """
++    db = SessionLocal()
++    try:
++        processed = process_pending_tasks(db, batch_size=settings.ai_task_worker_batch_size)
++        if processed:
++            logger.info(f"[AI_TASK_WORKER] Processed {processed} AI task(s) this run.")
++            log_scheduler_event("info", f"AI task worker processed {processed} task(s)", {"processed": processed})
++    except Exception as e:
++        logger.error(f"[AI_TASK_WORKER] Exception while processing AI task queue: {e}")
++        log_scheduler_event("error", f"AI task worker failed: {str(e)}")
++    finally:
++        db.close()
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/scheduler_service.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/scheduler_service.py
+index 290c572..1efea54 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/scheduler_service.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/scheduler/scheduler_service.py
+@@ -7,7 +7,7 @@ from datetime import datetime, timezone
+ from apscheduler.schedulers.asyncio import AsyncIOScheduler
+ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_MAX_INSTANCES
+ from app.config import settings
+-from app.scheduler.jobs import poll_mailboxes_job
++from app.scheduler.jobs import poll_mailboxes_job, ai_task_worker_job
+ 
+ logger = logging.getLogger("scheduler_service")
+ 
+@@ -73,6 +73,23 @@ class SchedulerService:
+             )
+             logger.info(f"[SCHEDULER_SERVICE] Registered job '{job_id}' every {settings.sync_interval_minutes} minute(s).")
+ 
++        # Register AI task queue worker — drains classification/priority
++        # tasks enqueued whenever a new email is saved. Runs far more
++        # frequently than the mailbox poll since it's a lightweight DB-only
++        # check unless there's actual work to do.
++        ai_job_id = "ai_task_queue_worker"
++        if not self.scheduler.get_job(ai_job_id):
++            self.scheduler.add_job(
++                ai_task_worker_job,
++                'interval',
++                seconds=settings.ai_task_worker_interval_seconds,
++                id=ai_job_id,
++                max_instances=1,
++                coalesce=True,
++                replace_existing=True
++            )
++            logger.info(f"[SCHEDULER_SERVICE] Registered job '{ai_job_id}' every {settings.ai_task_worker_interval_seconds} second(s).")
++
+         self.scheduler.start()
+         logger.info("[SCHEDULER_SERVICE] APScheduler started successfully.")
+ 
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/ai_task_service.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/ai_task_service.py
+index d112c13..c61a4f2 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/ai_task_service.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/ai_task_service.py
+@@ -15,6 +15,10 @@ from app.models.email import Email
+ from app.services.classification_service import classify_email as classify_email_sync
+ from app.services.priority_service import classify_email_priority as classify_priority_sync
+ 
++# Task types that must both complete before an email is considered fully AI-processed.
++# Extend this if new per-email AI task types are added.
++EMAIL_TASK_TYPES = {"classification", "priority"}
++
+ logger = logging.getLogger(__name__)
+ 
+ DEFAULT_BATCH_SIZE = 10
+@@ -42,9 +46,61 @@ def enqueue_task(
+     db.commit()
+     db.refresh(task)
+     logger.info(f"[AI_TASK] Enqueued task {task.id} type={task.task_type} email_id={task.email_id}")
++
++    # Reflect the queued state on the email itself so analytics/monitoring
++    # can immediately show it as "pending" rather than "not_started".
++    if email_id and task_type in EMAIL_TASK_TYPES:
++        email = db.query(Email).filter(Email.id == email_id).one_or_none()
++        if email and email.ai_processing_status == "not_started":
++            email.ai_processing_status = "pending"
++            db.add(email)
++            db.commit()
++
+     return task
+ 
+ 
++def _sync_email_ai_status(db: Session, email_id: str) -> None:
++    """
++    Recompute Email.ai_processing_status from the current state of its
++    classification/priority tasks:
++      - completed  -> all EMAIL_TASK_TYPES tasks completed
++      - failed     -> at least one EMAIL_TASK_TYPES task permanently failed
++                      and none are still pending/processing
++      - pending    -> otherwise, if any task exists
++    Leaves ai_processed_at set the first time the email reaches "completed".
++    """
++    if not email_id:
++        return
++    email = db.query(Email).filter(Email.id == email_id).one_or_none()
++    if not email:
++        return
++
++    tasks = (
++        db.query(AiTask)
++        .filter(AiTask.email_id == email_id, AiTask.task_type.in_(EMAIL_TASK_TYPES))
++        .all()
++    )
++    if not tasks:
++        return
++
++    statuses = {t.status for t in tasks}
++    if statuses <= {"completed"}:
++        new_status = "completed"
++    elif "pending" in statuses or "processing" in statuses:
++        new_status = "pending"
++    elif "failed" in statuses:
++        new_status = "failed"
++    else:
++        new_status = email.ai_processing_status
++
++    if new_status != email.ai_processing_status:
++        email.ai_processing_status = new_status
++        if new_status == "completed" and not email.ai_processed_at:
++            email.ai_processed_at = datetime.now(timezone.utc)
++        db.add(email)
++        db.commit()
++
++
+ def fetch_pending_tasks(db: Session, limit: int = DEFAULT_BATCH_SIZE) -> List[AiTask]:
+     """
+     Fetch pending tasks whose scheduled_at is NULL or <= now, ordered by creation time.
+@@ -83,6 +139,8 @@ def mark_task_completed(db: Session, task: AiTask, result: Dict[str, Any]) -> Ai
+     db.commit()
+     db.refresh(task)
+     logger.info(f"[AI_TASK] Task completed {task.id}")
++    if task.email_id:
++        _sync_email_ai_status(db, str(task.email_id))
+     return task
+ 
+ 
+@@ -98,6 +156,8 @@ def mark_task_failed(db: Session, task: AiTask, error: str) -> AiTask:
+     db.commit()
+     db.refresh(task)
+     logger.warning(f"[AI_TASK] Task {task.id} marked {task.status}. Error: {task.error}")
++    if task.status == "failed" and task.email_id:
++        _sync_email_ai_status(db, str(task.email_id))
+     return task
+ 
+ 
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/classification_service.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/classification_service.py
+index 7e39b4e..027a311 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/classification_service.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/classification_service.py
+@@ -233,6 +233,17 @@ def classify_email(email_id: str, db: Optional[Session] = None, assigned_by: Opt
+                 "category_id": str(cat.id),
+                 "confidence": confidence
+             })
++
++        # Denormalize the highest-confidence category onto Email.category.
++        # analytics.py's live /analytics/summary endpoint reads this flat
++        # column directly (not the Category/EmailCategory join table), so
++        # without this, category counts would stay "Uncategorized" forever
++        # even though classification is running correctly.
++        if persisted:
++            top = max(persisted, key=lambda p: p["confidence"])
++            email.category = top["category"]
++            db.add(email)
++
+         db.commit()
+         return persisted
+     except Exception:
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/email_service.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/email_service.py
+index 4c10ca2..0512343 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/email_service.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/email_service.py
+@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
+ from sqlalchemy.exc import IntegrityError
+ from app.models import Email
+ from app.utils.sanitize_gmail_payload import sanitize_gmail_payload
++from app.services.ai_task_service import enqueue_task
+ import logging
+ 
+ logger = logging.getLogger(__name__)
+@@ -68,7 +69,20 @@ class EmailService:
+         try:
+             self.db.add(email)
+             self.db.commit()
++            self.db.refresh(email)
+             logger.info(f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} for mailbox {mailbox_account_id}")
++
++            # Queue this email for AI classification + priority scoring.
++            # These run asynchronously via the ai_task_worker scheduled job,
++            # so saving an email never blocks on an AI provider call.
++            try:
++                enqueue_task(self.db, task_type="classification", email_id=str(email.id))
++                enqueue_task(self.db, task_type="priority", email_id=str(email.id))
++            except Exception as enqueue_err:
++                # Never fail the email save because task enqueueing failed —
++                # log it so it's visible in monitoring, but the email is safely stored.
++                logger.error(f"[AI_TASK_ENQUEUE_FAILED] email={email.id}: {enqueue_err}")
++
+             return True, email
+         except Exception as e:
+             self.db.rollback()
+diff --git a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/priority_service.py b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/priority_service.py
+index c891897..40a2a37 100644
+--- a/gmail-data-collection-engine/gmail-data-collection-engine/app/services/priority_service.py
++++ b/gmail-data-collection-engine/gmail-data-collection-engine/app/services/priority_service.py
+@@ -124,11 +124,14 @@ def _heuristic_priority(text: str, sender_email: Optional[str] = None) -> Dict[s
+         if k in text_low:
+             score_low += 1
+ 
+-    # sender importance heuristic (if sender_email is provided, treat some domains as higher importance)
+-    vip_domains = ["ceo@", "ceo.", "@boss", "@important"]  # placeholder; ideally configure system setting
++    # Sender importance heuristic: treat common executive-role local-parts as
++    # higher importance. This is a coarse signal — for real accuracy this
++    # should eventually read from a configurable VIP sender/domain list
++    # instead of hardcoded keywords.
++    VIP_SENDER_MARKERS = ["ceo", "founder", "cto", "cfo", "coo", "vp", "president", "director"]
+     if sender_email:
+-        s = sender_email.lower()
+-        if any(v in s for v in ["@ceo", "@ceo.", "@ceo@", "@founder", "@cto", "@cfo", "@vp."]):
++        local_part = sender_email.lower().split("@")[0]
++        if any(marker in local_part for marker in VIP_SENDER_MARKERS):
+             score_high += 2
+ 
+     # decide
+@@ -141,7 +144,7 @@ def _heuristic_priority(text: str, sender_email: Optional[str] = None) -> Dict[s
+     # default
+     return {"priority": "Medium", "confidence": 0.45}
+ 
+-def classify_text_priority(text: str, db: Optional[Session] = None) -> Dict[str, Any]:
++def classify_text_priority(text: str, db: Optional[Session] = None, sender_email: Optional[str] = None) -> Dict[str, Any]:
+     """Return predicted priority and confidence for an arbitrary text (no persistence)."""
+     close_db = False
+     if db is None:
+@@ -159,8 +162,9 @@ def classify_text_priority(text: str, db: Optional[Session] = None) -> Dict[str,
+                 return {"priority": pr, "confidence": conf}
+         except Exception:
+             logger.exception("AI priority classification failed, falling back to heuristics")
+-        # fallback heuristic
+-        return _heuristic_priority(text)
++        # fallback heuristic — sender_email must be threaded through so the
++        # VIP-sender boost actually has a chance to fire.
++        return _heuristic_priority(text, sender_email=sender_email)
+     finally:
+         if close_db:
+             db.close()
+@@ -183,7 +187,7 @@ def classify_email_priority(email_id: str, db: Optional[Session] = None, persist
+         if email.snippet:
+             parts.append(email.snippet)
+         content = "\n\n".join(parts)
+-        result = classify_text_priority(content, db=db)
++        result = classify_text_priority(content, db=db, sender_email=email.sender_email)
+         # Persist if requested
+         if persist:
+             # update fields
+-- 
+2.43.0
+
