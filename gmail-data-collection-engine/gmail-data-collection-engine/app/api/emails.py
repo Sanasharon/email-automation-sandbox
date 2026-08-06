@@ -53,8 +53,9 @@ def list_emails(
         load_only(
             Email.id, Email.sender_email, Email.subject, Email.labels,
             Email.processing_status, Email.received_at, Email.last_processing_error,
-            Email.retention_category, Email.has_attachments, 
-            Email.provider_message_id, Email.provider_thread_id
+            Email.has_attachments,
+            Email.provider_message_id, Email.provider_thread_id,
+            Email.category, Email.priority, Email.priority_confidence,
         )
     ).order_by(Email.created_at.desc(), Email.received_at.desc().nulls_last()).offset(skip).limit(limit).all()
     
@@ -79,17 +80,10 @@ def list_emails(
     # Map to schema
     result_data = []
     for e in emails:
-        # Category logic
-        category = "Uncategorized"
-        if e.labels and isinstance(e.labels, list):
-            custom_labels = [l for l in e.labels if l not in ['UNREAD', 'IMPORTANT', 'SENT', 'INBOX', 'STARRED', 'TRASH', 'SPAM']]
-            if custom_labels:
-                category = custom_labels[0]
-        elif e.retention_category:
-            category = e.retention_category
-
         item = EmailListItem.model_validate(e)
-        item.category = category
+        item.category = e.category or "Uncategorized"
+        item.priority = e.priority
+        item.priority_confidence = e.priority_confidence if e.priority_confidence is not None else 0.0
         item.has_attachments = e.has_attachments
         
         if e.id in exec_map:
@@ -153,16 +147,14 @@ def export_emails(status: str = Query("all"), search: str = Query(""), db: Sessi
     wb = Workbook()
     ws = wb.active
     ws.title = "Emails Export"
-    ws.append(["Recipient", "Subject", "Category", "Status", "Sent Time", "Body Content"])
+    ws.append(["Recipient", "Subject", "Category", "Priority", "Status", "Sent Time", "Body Content"])
     
     for e in emails:
-        # Replicate UI category logic cleanly - from retention_category only
-        category = e.retention_category if e.retention_category else "Uncategorized"
-            
         ws.append([
             e.sender_email or 'Unknown Sender',
             e.subject or '(No Subject)',
-            category,
+            e.category or "Uncategorized",
+            e.priority or "",
             e.processing_status,
             str(e.received_at),
             e.body_text or e.snippet or ''
@@ -196,12 +188,10 @@ def get_email_detail(email_id: str, db: Session = Depends(get_db)):
         WorkflowExecution.email_id == email_id
     ).order_by(WorkflowExecution.executed_at.asc()).all()
     
-    # Base category logic - ONLY from retention_category to avoid mixing with Gmail Labels
-    category = email.retention_category if email.retention_category else "Uncategorized"
-
-    # Convert to response
     detail = EmailDetailResponse.model_validate(email)
-    detail.category = category
+    detail.category = email.category or "Uncategorized"
+    detail.priority = email.priority
+    detail.priority_confidence = email.priority_confidence if email.priority_confidence is not None else 0.0
     detail.has_attachments = email.has_attachments
     
     # Attachments

@@ -12,6 +12,8 @@ import { getStatusConfig } from '../../config/statusConfig';
 import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
 import { EmailDetailDrawer } from '../../components/EmailDetailDrawer';
+import CategoryChip from '../../components/CategoryChip';
+import PriorityBadge from '../../components/PriorityBadge';
 
 export const EmailMonitoring = () => {
   const { canEdit } = useAuth();
@@ -76,7 +78,20 @@ export const EmailMonitoring = () => {
   const columns = [
     { header: 'Sender', accessor: 'sender', cellClassName: 'font-medium text-on-surface' },
     { header: 'Subject', accessor: 'subject', render: (row) => <div className="max-w-[200px] truncate" title={row.subject}>{row.subject}</div> },
-    { header: 'Category', accessor: 'category', render: (row) => <span className="text-on-surface-variant bg-surface-container px-2 py-1 rounded text-xs">{row.category}</span> },
+    {
+      header: 'Category',
+      accessor: 'category',
+      render: (row) => <CategoryChip name={row.category || 'Uncategorized'} />,
+    },
+    {
+      header: 'Priority',
+      accessor: 'priority',
+      render: (row) => (
+        <span title={row.priority_confidence != null ? `Confidence: ${(row.priority_confidence * 100).toFixed(0)}%` : undefined}>
+          <PriorityBadge priority={row.priority} small />
+        </span>
+      ),
+    },
     { header: 'Workflow', accessor: 'workflow_name', render: (row) => <div className="max-w-[150px] truncate text-primary font-medium" title={row.workflow_name}>{row.workflow_name}</div> },
     { 
       header: 'AI Generated', 

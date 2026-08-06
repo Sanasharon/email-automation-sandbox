@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, text, Index, CheckConstraint, Boolean, ForeignKey
+from sqlalchemy import Column, String, DateTime, Float, text, Index, CheckConstraint, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -35,6 +35,7 @@ class Email(Base):
     # optional classification fields (added to match runtime queries)
     category = Column(String, nullable=True)
     priority = Column(String, nullable=True)
+    priority_confidence = Column(Float, nullable=True, server_default=text("0.0"))
 
     processing_status = Column(String, nullable=False, server_default="collected")
     last_processing_error = Column(String, nullable=True)

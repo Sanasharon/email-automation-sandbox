@@ -12,7 +12,9 @@ export const normalizeEmail = (raw) => {
       id: raw.id,
       sender: raw.sender_email || raw.sender || 'Unknown Sender',
       subject: raw.subject || '(No Subject)',
-      category: raw.retention_category || raw.category || 'Uncategorized',
+      category: raw.category || 'Uncategorized',
+      priority: raw.priority || null,
+      priority_confidence: raw.priority_confidence ?? null,
       labels: raw.labels || [],
     status: (() => {
       const s = raw.processing_status || raw.email_status || raw.status || 'unknown';
