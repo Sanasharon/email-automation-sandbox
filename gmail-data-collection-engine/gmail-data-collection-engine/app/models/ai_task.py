@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 class AiTask(Base):
-    __tablename__ = "ai_tasks"
+    __tablename__ = "ai_task_queue"   # was "ai_tasks"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     email_id = Column(UUID(as_uuid=True), ForeignKey("emails.id", ondelete="CASCADE"), nullable=True)

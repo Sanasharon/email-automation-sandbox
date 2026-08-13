@@ -8,6 +8,7 @@ class MailboxAccount(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    company_id = Column(UUID(as_uuid=True), nullable=True)
     provider = Column(String, nullable=False, server_default="gmail")
     account_identifier = Column(String, nullable=False)
     auth_mode = Column(String, nullable=False, server_default="desktop_oauth")

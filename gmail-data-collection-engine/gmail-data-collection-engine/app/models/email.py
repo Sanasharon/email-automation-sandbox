@@ -16,6 +16,8 @@ class Email(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     mailbox_account_id = Column(UUID(as_uuid=True), ForeignKey("mailbox_accounts.id", ondelete="RESTRICT"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), nullable=False)
+
     provider_message_id = Column(String, nullable=False)
     provider_thread_id = Column(String, nullable=True)
     sender_email = Column(String, nullable=True)
