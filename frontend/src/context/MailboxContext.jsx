@@ -262,7 +262,14 @@ export const MailboxProvider = ({ children }) => {
                     eventSourceRef.current = null;
                   }
                   break;
+                case 'email.inserted':
+                case 'email.classified':
+                  window.dispatchEvent(new CustomEvent('email_event', { detail: data }));
+                  break;
                 default:
+                  if (data && (data.email_id || data.mailbox_account_id)) {
+                    window.dispatchEvent(new CustomEvent('email_event', { detail: data }));
+                  }
                   break;
               }
               // reset backoff on success

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useLiveData } from '../../hooks/useLiveData';
 import { api } from '../../api/client';
 import { DataTable } from '../../components/DataTable';
@@ -34,7 +34,16 @@ export const EmailMonitoring = () => {
   const fetchStats = useCallback(() => api.getEmailStats(), []);
 
   const { data, loading, error, refresh, updateItem } = useLiveData(fetchEmails, 5000, [fetchEmails, isConnected], isConnected);
-  const { data: stats } = useLiveData(fetchStats, 5000, [fetchStats], isConnected);
+  const { data: stats, refresh: refreshStats } = useLiveData(fetchStats, 5000, [fetchStats], isConnected);
+
+  useEffect(() => {
+    const handleEmailEvent = () => {
+      refresh();
+      refreshStats();
+    };
+    window.addEventListener('email_event', handleEmailEvent);
+    return () => window.removeEventListener('email_event', handleEmailEvent);
+  }, [refresh, refreshStats]);
 
   const filteredData = data?.data || [];
   const totalFiltered = data?.total || 0;
