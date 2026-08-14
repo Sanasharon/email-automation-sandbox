@@ -10,10 +10,18 @@ logger = logging.getLogger(__name__)
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    pool_recycle=180,
+    pool_size=3,
+    max_overflow=5,
+    pool_timeout=30,
+    connect_args={
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    },
 )
-
 # Log runtime DB configuration
 logger.info(f"Runtime DATABASE_URL from settings: {settings.database_url}")
 logger.info(f"SQLAlchemy engine URL: {engine.url}")

@@ -100,6 +100,22 @@ def _sync_email_ai_status(db: Session, email_id: str) -> None:
         db.add(email)
         db.commit()
 
+        # Broadcast real-time SSE event so the frontend updates category/priority badges immediately.
+        try:
+            from app.api.v1.events import broadcast_event
+
+            broadcast_event("email.classified", {
+                "type": "email.classified",
+                "email_id": str(email.id),
+                "mailbox_account_id": str(email.mailbox_account_id),
+                "category": email.category,
+                "priority": email.priority,
+                "priority_confidence": email.priority_confidence,
+                "ai_processing_status": email.ai_processing_status,
+            })
+        except Exception:
+            logger.exception(f"[AI_TASK] Failed to broadcast email.classified event for email {email.id}")
+
 
 def fetch_pending_tasks(db: Session, limit: int = DEFAULT_BATCH_SIZE) -> List[AiTask]:
     """
