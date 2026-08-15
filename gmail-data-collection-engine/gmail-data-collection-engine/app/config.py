@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # --- Sync Limits ---
     max_emails_per_sync: int = 50
+    max_full_sync_emails: int = 500
     max_attachments_per_sync: int = 10
     max_attachment_size_mb: int = 15
 

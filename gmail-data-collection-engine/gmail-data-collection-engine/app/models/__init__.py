@@ -13,8 +13,8 @@ from app.models.ai_provider import AIProvider
 from app.models.email_template import EmailTemplate
 from app.models.system_log import SystemLog
 from app.models.ai_task import AiTask
-from app.models.email_category import EmailCategory
 from app.models.category import Category
+from app.models.email_category import EmailCategory
 
 __all__ = [
     "MailboxAccount",
@@ -33,7 +33,7 @@ __all__ = [
     "AIProvider",
     "EmailTemplate",
     "SystemLog",
-    "AiTask"
-    "EmailCategory"
-    "Category"
+    "AiTask",
+    "Category",
+    "EmailCategory",
 ]

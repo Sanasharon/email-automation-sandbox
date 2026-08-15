@@ -746,3 +746,4 @@ getMailboxes: async () => {
   },
 };
 export { axiosClient };
+export default axiosClient;

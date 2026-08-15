@@ -20,34 +20,44 @@ def create_access_token(data: dict, expires_delta: timedelta):
 
 @router.post("/login", response_model=LoginResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
+    if not req.email or not req.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+
     user = db.query(User).filter(User.email == req.email).first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     try:
         # Check password against hashed_password
-        if not bcrypt.checkpw(req.password.encode('utf-8'), user.hashed_password.encode('utf-8')):
-            raise ValueError()
-    except:
+        valid_password = bcrypt.checkpw(req.password.encode('utf-8'), user.hashed_password.encode('utf-8'))
+        if not valid_password:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid email or password")
         
-    if not user.is_active:
+    if not getattr(user, 'is_active', True):
         raise HTTPException(status_code=403, detail="Account is deactivated")
         
-    # Update last login
-    user.last_login = datetime.utcnow()
-    db.commit()
+    # Update last login safely
+    try:
+        user.last_login = datetime.utcnow()
+        db.commit()
+    except Exception:
+        db.rollback()
     
-    role = db.query(UserRole).filter(UserRole.id == user.role_id).first()
+    role = db.query(UserRole).filter(UserRole.id == user.role_id).first() if user.role_id else None
     role_name = role.name if role else "Viewer"
     permissions = role.permissions_json if role else []
     
     expires_delta = timedelta(minutes=settings.jwt_expires_in_minutes)
     token = create_access_token({"id": str(user.id), "role": role_name}, expires_delta)
     
+    user_name = getattr(user, 'name', 'User') or 'User'
     formatted_user = {
         "id": str(user.id),
-        "name": user.name,
+        "name": user_name,
         "email": user.email,
         "role": role_name,
         "permissions": permissions

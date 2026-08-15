@@ -58,11 +58,7 @@ class SyncOrchestrator:
                 sync_locked_at = NOW(), 
                 sync_lock_expires_at = NOW() + INTERVAL '{ttl_minutes} minutes'
             WHERE id = :id
-              AND (
-                  sync_lock_token IS NULL
-                  OR sync_lock_expires_at < NOW()
-              )
-              AND is_active = TRUE
+              AND (sync_status IN ('connected', 'idle', 'active') OR sync_lock_expires_at < NOW())
         """)
         
         res = self.db.execute(lock_query, {"token": lock_token, "id": account_id})
@@ -73,6 +69,15 @@ class SyncOrchestrator:
             return False
             
         logger.info(f"[LOCK] Lock acquired for mailbox {account_id} (token={lock_token[:8]}...)")
+        try:
+            from app.api.v1.events import broadcast_event
+            broadcast_event("sync_progress", {
+                "mailbox_id": account_id,
+                "account_id": account_id,
+                "status": "syncing"
+            })
+        except Exception as sse_err:
+            logger.warning(f"[SSE] Non-fatal error broadcasting sync_progress: {sse_err}")
         
         try:
             account = self.db.query(MailboxAccount).get(account_id)
@@ -122,7 +127,7 @@ class SyncOrchestrator:
             
             try:
                 # --- Step 4: Fetch message IDs ---
-                max_emails = settings.max_emails_per_sync
+                max_emails = settings.max_full_sync_emails if mode == "full" else settings.max_emails_per_sync
                 msg_ids_to_process = []
                 
                 if mode == "incremental":
@@ -149,6 +154,7 @@ class SyncOrchestrator:
                             logger.warning("[SYNC] HistoryId expired (404). Falling back to full sync.")
                             fallback_full_sync_used = True
                             mode = "full"
+                            max_emails = settings.max_full_sync_emails
                         else:
                             raise e
                             
@@ -480,4 +486,3 @@ class SyncOrchestrator:
             self.db.execute(unlock_query, {"id": account_id, "token": lock_token})
             self.db.commit()
             logger.info(f"[LOCK] Lock released for mailbox {account_id}")
-

@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models import Email
-from app.models.mailbox_account import MailboxAccount
 from app.utils.sanitize_gmail_payload import sanitize_gmail_payload
 from app.services.ai_task_service import enqueue_task
 import logging
@@ -45,16 +44,29 @@ class EmailService:
 
         sanitized_json = sanitize_gmail_payload(parsed_data.get("raw_email_json", {}))
 
-        mailbox = self.db.query(MailboxAccount).filter(
-            MailboxAccount.id == mailbox_account_id
-        ).first()
+        # Combine text content for fast immediate heuristic classification
+        text_parts = []
+        if parsed_data.get("subject"):
+            text_parts.append(parsed_data["subject"])
+        if parsed_data.get("body_text"):
+            text_parts.append(parsed_data["body_text"])
+        if parsed_data.get("snippet"):
+            text_parts.append(parsed_data["snippet"])
+        content_str = "\n\n".join(text_parts)
 
-        if not mailbox:
-            raise ValueError(f"Mailbox account {mailbox_account_id} not found")
+        # 1. Instant heuristic category
+        from app.services.classification_service import _fallback_keyword_classify
+        initial_categories = _fallback_keyword_classify(content_str)
+        initial_category = initial_categories[0]["category"] if initial_categories else "General"
+
+        # 2. Instant heuristic priority
+        from app.services.priority_service import _heuristic_priority
+        initial_priority_dict = _heuristic_priority(content_str, sender_email=parsed_data.get("sender_email"))
+        initial_priority = initial_priority_dict.get("priority", "Medium")
+        initial_confidence = float(initial_priority_dict.get("confidence", 0.5))
 
         email = Email(
             mailbox_account_id=mailbox_account_id,
-            company_id=mailbox.company_id,
             provider_message_id=parsed_data["provider_message_id"],
             provider_thread_id=parsed_data.get("provider_thread_id"),
             sender_email=parsed_data.get("sender_email"),
@@ -70,6 +82,9 @@ class EmailService:
             body_text=parsed_data.get("body_text"),
             body_html=parsed_data.get("body_html"),
             raw_email_json=sanitized_json,
+            category=initial_category,
+            priority=initial_priority,
+            priority_confidence=initial_confidence,
             processing_status="collected",
             ai_processing_status="not_started",
             record_status="active"
@@ -81,21 +96,46 @@ class EmailService:
             self.db.refresh(email)
             logger.info(f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} for mailbox {mailbox_account_id}")
 
-            # Queue this email for AI classification + priority scoring.
-            # These run asynchronously via the ai_task_worker scheduled job,
-            # so saving an email never blocks on an AI provider call.
+            # Broadcast real-time ingestion & badge events immediately to frontend
+            try:
+                from app.api.v1.events import broadcast_event
+                email_payload = {
+                    "id": str(email.id),
+                    "mailbox_account_id": str(mailbox_account_id),
+                    "sender_email": email.sender_email,
+                    "sender": email.sender_email,
+                    "subject": email.subject,
+                    "category": email.category,
+                    "priority": email.priority,
+                    "priority_confidence": email.priority_confidence,
+                    "status": "collected",
+                    "received_at": email.received_at.isoformat() if email.received_at else None,
+                    "sent_time": email.received_at.isoformat() if email.received_at else None,
+                    "has_attachments": email.has_attachments
+                }
+                broadcast_event("email_saved", {"email": email_payload, "mailbox_id": str(mailbox_account_id)})
+                broadcast_event("badge_updated", {
+                    "email_id": str(email.id),
+                    "mailbox_id": str(mailbox_account_id),
+                    "category": email.category,
+                    "priority": email.priority,
+                    "priority_confidence": email.priority_confidence,
+                    "status": email.processing_status
+                })
+            except Exception as b_err:
+                logger.warning(f"[SSE] Non-fatal broadcast error on email_saved: {b_err}")
+
+            # Queue this email for AI classification + priority scoring refinement.
             try:
                 enqueue_task(self.db, task_type="classification", email_id=str(email.id))
                 enqueue_task(self.db, task_type="priority", email_id=str(email.id))
             except Exception as enqueue_err:
-                # Never fail the email save because task enqueueing failed —
-                # log it so it's visible in monitoring, but the email is safely stored.
                 logger.error(f"[AI_TASK_ENQUEUE_FAILED] email={email.id}: {enqueue_err}")
 
             return True, email
         except Exception as e:
             self.db.rollback()
-            if isinstance(e, IntegrityError) and ("uq_email_provider_msg" in str(e) or "duplicate key" in str(e) or "uq_email_account_provider_msg_id" in str(e)):
+            if isinstance(e, IntegrityError) or "duplicate key" in str(e).lower() or "unique" in str(e).lower():
                 logger.info(f"[EMAIL_DUPLICATE] Duplicate email {parsed_data.get('provider_message_id')} skipped")
                 return False, None
             logger.error(f"[EMAIL_ERROR] Failed to save email {parsed_data.get('provider_message_id')}: {e}")

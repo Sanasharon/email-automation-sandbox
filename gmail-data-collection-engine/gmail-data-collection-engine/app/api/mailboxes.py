@@ -29,6 +29,7 @@ def list_mailboxes(current_user: dict = Depends(get_current_user), db: Session =
             "id": str(acc.id),
             "provider": acc.provider,
             "account_identifier": acc.account_identifier,
+            "email_address": acc.account_identifier,
             "auth_mode": acc.auth_mode,
             "sync_status": acc.sync_status,
             "last_history_id": acc.last_history_id,

@@ -170,8 +170,24 @@ export const useLiveData = (fetchFn, pollingInterval = null, dependencies = [], 
   const addItem = useCallback((newItem) => {
     setData(prev => {
       const itemWithMeta = { ...newItem, _lastLocalMutation: Date.now() };
-      if (Array.isArray(prev)) return [itemWithMeta, ...prev];
-      if (prev?.data && Array.isArray(prev.data)) return { ...prev, data: [itemWithMeta, ...prev.data], total: (prev.total || 0) + 1 };
+      const matches = (item) => (item.id && newItem.id && item.id === newItem.id) ||
+                               (item.provider_message_id && newItem.provider_message_id && item.provider_message_id === newItem.provider_message_id);
+
+      if (Array.isArray(prev)) {
+        if (prev.some(matches)) {
+          return prev.map(item => matches(item) ? { ...item, ...itemWithMeta } : item);
+        }
+        return [itemWithMeta, ...prev];
+      }
+      if (prev?.data && Array.isArray(prev.data)) {
+        if (prev.data.some(matches)) {
+          return {
+            ...prev,
+            data: prev.data.map(item => matches(item) ? { ...item, ...itemWithMeta } : item)
+          };
+        }
+        return { ...prev, data: [itemWithMeta, ...prev.data], total: (prev.total || 0) + 1 };
+      }
       return prev;
     });
   }, []);
