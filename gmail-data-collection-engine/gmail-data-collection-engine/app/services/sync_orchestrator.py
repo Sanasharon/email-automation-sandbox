@@ -57,8 +57,12 @@ class SyncOrchestrator:
                 sync_lock_token = :token, 
                 sync_locked_at = NOW(), 
                 sync_lock_expires_at = NOW() + INTERVAL '{ttl_minutes} minutes'
-            WHERE id = :id 
-              AND (sync_status IN ('connected', 'idle', 'active') OR sync_lock_expires_at < NOW())
+            WHERE id = :id
+              AND (
+                  sync_lock_token IS NULL
+                  OR sync_lock_expires_at < NOW()
+              )
+              AND is_active = TRUE
         """)
         
         res = self.db.execute(lock_query, {"token": lock_token, "id": account_id})
@@ -476,3 +480,4 @@ class SyncOrchestrator:
             self.db.execute(unlock_query, {"id": account_id, "token": lock_token})
             self.db.commit()
             logger.info(f"[LOCK] Lock released for mailbox {account_id}")
+

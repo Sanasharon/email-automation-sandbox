@@ -1,13 +1,12 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.models import Email, MailboxAccount
+from app.models import Email
+from app.models.mailbox_account import MailboxAccount
 from app.utils.sanitize_gmail_payload import sanitize_gmail_payload
 from app.services.ai_task_service import enqueue_task
 import logging
 
-
 logger = logging.getLogger(__name__)
-
 
 class EmailService:
     def __init__(self, db: Session):
@@ -44,27 +43,18 @@ class EmailService:
             logger.error(f"Missing required fields: {missing}")
             raise ValueError(f"Missing required fields: {missing}")
 
-        sanitized_json = sanitize_gmail_payload(
-            parsed_data.get("raw_email_json", {})
-        )
+        sanitized_json = sanitize_gmail_payload(parsed_data.get("raw_email_json", {}))
 
         mailbox = self.db.query(MailboxAccount).filter(
             MailboxAccount.id == mailbox_account_id
         ).first()
 
         if not mailbox:
-            raise ValueError(f"Mailbox account not found: {mailbox_account_id}")
-
-        company_id_val = mailbox.company_id
-
-        if not company_id_val:
-            raise ValueError(
-                f"company_id not found for mailbox: {mailbox_account_id}"
-            )
+            raise ValueError(f"Mailbox account {mailbox_account_id} not found")
 
         email = Email(
             mailbox_account_id=mailbox_account_id,
-            company_id=company_id_val,
+            company_id=mailbox.company_id,
             provider_message_id=parsed_data["provider_message_id"],
             provider_thread_id=parsed_data.get("provider_thread_id"),
             sender_email=parsed_data.get("sender_email"),
@@ -89,50 +79,24 @@ class EmailService:
             self.db.add(email)
             self.db.commit()
             self.db.refresh(email)
-            logger.info(
-                f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} "
-                f"for mailbox {mailbox_account_id}"
-            )
+            logger.info(f"[EMAIL_SAVED] Saved email {parsed_data['provider_message_id']} for mailbox {mailbox_account_id}")
 
-            # Classify immediately so the UI shows category in real time.
-            try:
-                from app.services.classification_service import classify_email
-
-                classify_email(str(email.id), self.db)
-
-                logger.info(f"[EMAIL_CLASSIFIED] Email {email.id} categorized immediately")
-            except Exception as classify_err:
-                logger.error(
-                    f"[EMAIL_CLASSIFICATION_FAILED] email={email.id}: {classify_err}"
-                )
-
-            # Keep the queue worker as a fallback/background processor.
+            # Queue this email for AI classification + priority scoring.
+            # These run asynchronously via the ai_task_worker scheduled job,
+            # so saving an email never blocks on an AI provider call.
             try:
                 enqueue_task(self.db, task_type="classification", email_id=str(email.id))
                 enqueue_task(self.db, task_type="priority", email_id=str(email.id))
             except Exception as enqueue_err:
-                logger.error(
-                    f"[AI_TASK_ENQUEUE_FAILED] email={email.id}: {enqueue_err}"
-                )
+                # Never fail the email save because task enqueueing failed —
+                # log it so it's visible in monitoring, but the email is safely stored.
+                logger.error(f"[AI_TASK_ENQUEUE_FAILED] email={email.id}: {enqueue_err}")
 
             return True, email
-
         except Exception as e:
             self.db.rollback()
-
-            if isinstance(e, IntegrityError) and (
-                "uq_email_provider_msg" in str(e)
-                or "duplicate key" in str(e)
-                or "uq_email_account_provider_msg_id" in str(e)
-            ):
-                logger.info(
-                    f"[EMAIL_DUPLICATE] Duplicate email "
-                    f"{parsed_data.get('provider_message_id')} skipped"
-                )
+            if isinstance(e, IntegrityError) and ("uq_email_provider_msg" in str(e) or "duplicate key" in str(e) or "uq_email_account_provider_msg_id" in str(e)):
+                logger.info(f"[EMAIL_DUPLICATE] Duplicate email {parsed_data.get('provider_message_id')} skipped")
                 return False, None
-
-            logger.error(
-                f"[EMAIL_ERROR] Failed to save email "
-                f"{parsed_data.get('provider_message_id')}: {e}"
-            )
+            logger.error(f"[EMAIL_ERROR] Failed to save email {parsed_data.get('provider_message_id')}: {e}")
             raise e

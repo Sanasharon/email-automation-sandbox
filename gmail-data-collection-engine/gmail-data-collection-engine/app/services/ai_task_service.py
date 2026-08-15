@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.ai_task import AiTask
 from app.models.email import Email
-from app.services.classification_service import classify_email as classify_email_sync
-from app.services.priority_service import classify_email_priority as classify_priority_sync
+from app.models.category import Category
+from app.models.email_category import EmailCategory
+from app.services.classification_service import classify_email as classify_email_sync, classify_text
+from app.services.priority_service import classify_email_priority as classify_priority_sync, classify_text_priority
 
 # Task types that must both complete before an email is considered fully AI-processed.
 # Extend this if new per-email AI task types are added.
@@ -99,22 +101,6 @@ def _sync_email_ai_status(db: Session, email_id: str) -> None:
             email.ai_processed_at = datetime.now(timezone.utc)
         db.add(email)
         db.commit()
-
-        # Broadcast real-time SSE event so the frontend updates category/priority badges immediately.
-        try:
-            from app.api.v1.events import broadcast_event
-
-            broadcast_event("email.classified", {
-                "type": "email.classified",
-                "email_id": str(email.id),
-                "mailbox_account_id": str(email.mailbox_account_id),
-                "category": email.category,
-                "priority": email.priority,
-                "priority_confidence": email.priority_confidence,
-                "ai_processing_status": email.ai_processing_status,
-            })
-        except Exception:
-            logger.exception(f"[AI_TASK] Failed to broadcast email.classified event for email {email.id}")
 
 
 def fetch_pending_tasks(db: Session, limit: int = DEFAULT_BATCH_SIZE) -> List[AiTask]:
@@ -205,6 +191,94 @@ def process_task(db: Session, task: AiTask) -> Dict[str, Any]:
         return {"success": False, "error": str(exc)}
 
 
+def _process_email_task_pair(db: Session, classification_task: AiTask, priority_task: AiTask) -> None:
+    """
+    Compute classification + priority for the same email and persist both
+    Email.category and Email.priority in a single commit, so the two
+    badges become visible to clients at the same moment instead of
+    category landing first and priority following once its own task
+    finishes.
+
+    Uses the non-persisting classify_text()/classify_text_priority() helpers
+    (rather than classify_email_sync/classify_priority_sync, which each
+    commit independently) and replicates their existing persistence logic
+    here so the two writes can share one transaction.
+
+    Each AiTask is still marked processing/completed/failed individually,
+    so per-task retries, attempts, and error messages are unaffected. If
+    either computation fails, that task alone is marked failed (eligible
+    for its normal retry) while the other's result is still committed.
+    """
+    email_id = str(classification_task.email_id)
+    classification_result: Optional[List[Dict[str, Any]]] = None
+    classification_error: Optional[str] = None
+    priority_result: Optional[Dict[str, Any]] = None
+    priority_error: Optional[str] = None
+
+    email = db.query(Email).filter(Email.id == email_id).one_or_none()
+    if not email:
+        classification_error = priority_error = "Email not found"
+    else:
+        content = "\n\n".join(
+            part for part in [email.subject, email.body_text, email.snippet] if part
+        )
+
+        try:
+            predictions = classify_text(content, db=db, top_k=3)
+            persisted = []
+            for p in predictions:
+                category_name = (p.get("category") or "").strip()
+                if not category_name:
+                    continue
+                confidence = float(p.get("confidence", 0.0))
+                cat = db.query(Category).filter(Category.name.ilike(category_name)).one_or_none()
+                if not cat:
+                    cat = Category(name=category_name.title(), description=None)
+                    db.add(cat)
+                    db.flush()
+                assoc = (
+                    db.query(EmailCategory)
+                    .filter(EmailCategory.email_id == email.id, EmailCategory.category_id == cat.id)
+                    .one_or_none()
+                )
+                if not assoc:
+                    assoc = EmailCategory(email_id=email.id, category_id=cat.id, confidence=confidence)
+                    db.add(assoc)
+                else:
+                    assoc.confidence = confidence
+                persisted.append({"category": cat.name, "category_id": str(cat.id), "confidence": confidence})
+            if persisted:
+                top = max(persisted, key=lambda p: p["confidence"])
+                email.category = top["category"]
+            classification_result = persisted
+        except Exception as exc:
+            logger.exception("Error computing classification for paired task %s", classification_task.id)
+            classification_error = str(exc)
+
+        try:
+            pr = classify_text_priority(content, db=db, sender_email=email.sender_email)
+            email.priority = pr.get("priority", "Medium")
+            email.priority_confidence = float(pr.get("confidence", 0.0))
+            priority_result = {"priority": email.priority, "confidence": email.priority_confidence}
+        except Exception as exc:
+            logger.exception("Error computing priority for paired task %s", priority_task.id)
+            priority_error = str(exc)
+
+        db.add(email)
+        db.commit()
+        db.refresh(email)
+
+    if classification_error is None:
+        mark_task_completed(db, classification_task, classification_result)
+    else:
+        mark_task_failed(db, classification_task, classification_error)
+
+    if priority_error is None:
+        mark_task_completed(db, priority_task, priority_result)
+    else:
+        mark_task_failed(db, priority_task, priority_error)
+
+
 def process_pending_tasks(db: Optional[Session] = None, batch_size: int = DEFAULT_BATCH_SIZE) -> int:
     """
     Fetch pending tasks and process them in a loop.
@@ -220,19 +294,46 @@ def process_pending_tasks(db: Optional[Session] = None, batch_size: int = DEFAUL
     try:
         tasks = fetch_pending_tasks(db, limit=batch_size)
         logger.info(f"[AI_TASK] Fetched {len(tasks)} pending task(s)")
+
+        # Group classification/priority tasks by email so a same-batch pair
+        # can be routed through _process_email_task_pair() and committed
+        # together. Tasks without a matching counterpart in this batch fall
+        # through to the existing independent per-task handling below.
+        pending_by_email: Dict[str, Dict[str, AiTask]] = {}
+        for task in tasks:
+            if task.task_type in EMAIL_TASK_TYPES and task.email_id:
+                pending_by_email.setdefault(str(task.email_id), {})[task.task_type] = task
+        paired_task_ids = set()
+        for task_map in pending_by_email.values():
+            if "classification" in task_map and "priority" in task_map:
+                paired_task_ids.add(task_map["classification"].id)
+                paired_task_ids.add(task_map["priority"].id)
+
+        handled_email_pairs = set()
         for task in tasks:
             # if task already exceeded attempts and is failed, skip
             if (task.attempts or 0) >= (task.max_attempts or 3) and task.status == "failed":
                 logger.info(f"[AI_TASK] Skipping failed task {task.id} (attempts >= max_attempts)")
                 continue
             try:
-                mark_task_processing(db, task)
-                result = process_task(db, task)
-                if result.get("success"):
-                    mark_task_completed(db, task, result.get("data"))
+                if task.id in paired_task_ids:
+                    email_id = str(task.email_id)
+                    if email_id in handled_email_pairs:
+                        continue  # already processed together with its pair
+                    task_map = pending_by_email[email_id]
+                    mark_task_processing(db, task_map["classification"])
+                    mark_task_processing(db, task_map["priority"])
+                    _process_email_task_pair(db, task_map["classification"], task_map["priority"])
+                    handled_email_pairs.add(email_id)
+                    processed += 2
                 else:
-                    mark_task_failed(db, task, result.get("error", "unknown"))
-                processed += 1
+                    mark_task_processing(db, task)
+                    result = process_task(db, task)
+                    if result.get("success"):
+                        mark_task_completed(db, task, result.get("data"))
+                    else:
+                        mark_task_failed(db, task, result.get("error", "unknown"))
+                    processed += 1
             except Exception as exc:
                 # ensure we mark failure and continue with next tasks
                 logger.exception("Unhandled exception while processing task %s", task.id)
